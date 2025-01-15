@@ -12,6 +12,7 @@ for dirpath, dirnames, filenames in os.walk(root_dir):
             os.rename(old_file_path, new_file_path)
             print(f"Renamed {old_file_path} to {new_file_path}")
 
+# INFO: This script will rename all CFGDATA.XML files to the upper folder name.XML
 # ├───E_TBT875_KodimTebing
 # │   └───AUTOBAKDATA20250106033705
 # |        └───CFGDATA.XML

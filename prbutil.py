@@ -1,31 +1,16 @@
 import os
+from typing import List, Optional, Tuple
 
 import pandas as pd
 import streamlit as st
 import toml
 from omegaconf import OmegaConf
 from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 from streamlit_extras.mandatory_date_range import date_range_picker
 
 st.set_page_config(layout="wide")
-
-
-class DataFrameManager:
-    def __init__(self):
-        self.dataframes = {}
-
-    def add_dataframe(self, name, dataframe):
-        self.dataframes[name] = dataframe
-
-    def get_dataframe(self, name):
-        return self.dataframes.get(name)
-
-    def display_dataframe(self, name, header):
-        dataframe = self.get_dataframe(name)
-        if dataframe is not None:
-            st.header(header)
-            st.write(dataframe)
 
 
 def load_config():
@@ -51,7 +36,29 @@ def create_session(cfg):
         return None, None
 
 
-def run_query(engine, selected_sites, date_range):
+def group_sector(sector: str) -> int:
+    sector_mapping = {
+        "1": 1,
+        "2": 2,
+        "3": 3,
+        "4": 1,
+        "5": 2,
+        "6": 3,
+        "7": 1,
+        "8": 2,
+        "9": 3,
+        "10": 1,
+        "11": 2,
+        "12": 3,
+    }
+    return sector_mapping.get(sector, 0)
+
+
+def run_query(
+    engine: Engine,
+    selected_sites: list[str],
+    date_range: tuple[pd.Timestamp, pd.Timestamp],
+) -> pd.DataFrame | None:
     if not selected_sites or not date_range:
         st.warning("Please select site IDs and date range to load data.")
         return None
@@ -81,8 +88,6 @@ def main():
     )
     st.session_state.db_session, st.session_state.engine = session, engine
 
-    df_manager = DataFrameManager()
-
     if engine:
         try:
             with open(os.path.join(os.path.dirname(__file__), "sitelist.txt")) as f:
@@ -104,8 +109,7 @@ def main():
             if st.button("Run Query"):
                 df = run_query(engine, selected_sites, date_range)
                 if df is not None:
-                    df_manager.add_dataframe("query_result", df)
-                    df_manager.display_dataframe("query_result", "Query Result")
+                    st.dataframe(df)
         except Exception as e:
             st.error(f"Error loading data: {e}")
 
