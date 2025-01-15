@@ -1,10 +1,10 @@
 import os
 
-root_dir = r'D:\HW\Export\XML_LTE_NS_20250106'
+root_dir = r"D:\HW\Export\XML_LTE_NS_20250113"
 
 for dirpath, dirnames, filenames in os.walk(root_dir):
     for filename in filenames:
-        if filename == 'CFGDATA.XML':
+        if filename == "CFGDATA.XML":
             upper_folder_name = os.path.basename(os.path.dirname(dirpath))
             new_filename = f"{upper_folder_name}.XML"
             old_file_path = os.path.join(dirpath, filename)
