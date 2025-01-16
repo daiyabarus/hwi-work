@@ -39,16 +39,6 @@ def create_session(cfg: DictConfig):
         return None, None
 
 
-def add_site_id_column(df, cellname_col):
-    def extract_site_id(cell_id):
-        if cell_id.startswith(("E_", "E-", "N_", "N-")):
-            cell_id = cell_id[2:]
-        return cell_id[:6]
-
-    df["site_id"] = df[cellname_col].apply(extract_site_id)
-    return df
-
-
 def determine_sector(cell: str) -> int:
     sector_mapping = {
         "1": 1,
@@ -81,26 +71,9 @@ def colors():
 
 
 def create_chart(df, site, parameter):
-    def format_x_axis(date, hour):
-        return date.astype(str) + " " + hour.astype(str).str.zfill(2)
-
-    def add_cell_trace(fig, x_axis, y_values, cell_name, color):
-        fig.add_trace(
-            go.Scatter(
-                x=x_axis,
-                y=y_values,
-                mode="lines",
-                name=cell_name,
-                line=dict(color=color),
-                hovertemplate=(
-                    f"<b>{cell_name}</b><br>"
-                    f"<b>Date:</b> %{{x}}<br>"
-                    f"<b>{parameter}:</b> %{{y}}<br>"
-                    "<extra></extra>"
-                ),
-            ),
-            secondary_y=False,
-        )
+    df["datetime"] = pd.to_datetime(
+        df["date"].astype(str) + " " + df["time"].astype(str), errors="coerce"
+    )
 
     fig = make_subplots(specs=[[{"secondary_y": False}]])
     title = get_header(df["cellname"].unique())
@@ -108,38 +81,52 @@ def create_chart(df, site, parameter):
 
     for sector, sector_df in df.groupby("sector"):
         for cell, cell_df in sector_df.groupby("cellname"):
-            cell_df = cell_df.sort_values(by=["date", "time"])
-            x_axis = format_x_axis(cell_df["date"], cell_df["time"])
-            add_cell_trace(fig, x_axis, cell_df[parameter], cell, color_mapping[cell])
+            sector_df_sorted = cell_df.sort_values(by=["datetime"])
+            fig.add_trace(
+                go.Scatter(
+                    x=sector_df_sorted["datetime"],
+                    y=sector_df_sorted[parameter],
+                    mode="lines",
+                    name=cell,
+                    line=dict(color=color_mapping.get(cell, "#000000")),
+                    hovertemplate=f"<b>{cell}</b><br><b>Date:</b> %{{x}}<br><b>{parameter}:</b> %{{y}}<br><extra></extra>",
+                )
+            )
 
     fig.update_layout(
         title_text=title,
         title_x=0.4,
         template="plotly_white",
         xaxis=dict(
-            tickformat="%m/%d/%Y %H:%M",
+            tickformat="%m/%d/%Y %H",
             tickangle=-45,
             type="category",
             tickmode="auto",
             nticks=15,
         ),
+        yaxis_title=parameter,
         autosize=True,
-        showlegend=True,
+        height=400,
+        hovermode="x unified",
+        margin=dict(l=20, r=20, t=40, b=20),
         legend=dict(
             orientation="h",
             yanchor="top",
-            y=-0.8,
+            y=-0.4,
             xanchor="center",
             x=0.5,
+            bgcolor="#F5F5F5",
+            bordercolor="#F5F5F5",
+            itemclick="toggleothers",
+            itemdoubleclick="toggle",
+            itemsizing="constant",
+            font=dict(size=14),
         ),
-        width=600,
-        height=350,
     )
-    fig.update_yaxes(title_text=parameter, secondary_y=False)
+
     return fig
 
 
-# def get_header(cell, site):
 def get_header(cell):
     sectors = {f"Sector {input_string[-1]}" for input_string in cell}
     sorted_sectors = sorted(sectors)
@@ -241,8 +228,7 @@ def main():
             return
 
         if df is not None:
-            df = add_site_id_column(df, "cellname")
-
+            df["site"] = df["siteid"]
             df["sector"] = df["cellname"].apply(determine_sector)
 
             for site in selected_sites:

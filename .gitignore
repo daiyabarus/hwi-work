@@ -9,9 +9,11 @@ __pycache__/
 # Distribution / packaging
 test/
 test*.*
+*.txt
 *.lock
 *.ini
 .Python
+*.toml
 build/
 develop-eggs/
 dist/
