@@ -89,7 +89,7 @@ def create_chart(df, site, parameter):
                     mode="lines",
                     name=cell,
                     line=dict(color=color_mapping.get(cell, "#000000")),
-                    hovertemplate=f"<b>{cell}</b><br><b>Date:</b> %{{x}}<br><b>{parameter}:</b> %{{y}}<br><extra></extra>",
+                    # hovertemplate=f"<b>{cell}</b><br><b>Date:</b> %{{x}}<br><b>{parameter}:</b> %{{y}}<br><extra></extra>",
                 )
             )
 
@@ -107,7 +107,7 @@ def create_chart(df, site, parameter):
         yaxis_title=parameter,
         autosize=True,
         height=400,
-        hovermode="x unified",
+        # hovermode="x unified",
         margin=dict(l=20, r=20, t=40, b=20),
         legend=dict(
             orientation="h",
@@ -127,7 +127,7 @@ def create_chart(df, site, parameter):
     return fig
 
 
-def get_header(cell):
+def get_header(cell: list[str]) -> str:
     sectors = {f"Sector {input_string[-1]}" for input_string in cell}
     sorted_sectors = sorted(sectors)
     return ", ".join(sorted_sectors)
@@ -214,7 +214,8 @@ def main():
                         f"site_{i}": f"%{site}%"
                         for i, site in enumerate(selected_sites)
                     }
-                    params.update({"start_date": start_date, "end_date": end_date})
+                    params["start_date"] = start_date
+                    params["end_date"] = end_date
 
                     df = pd.read_sql(query, engine, params=params)
                 else:
@@ -248,6 +249,7 @@ def main():
                         font_size=24,
                         text_align="left",
                         tag="h6",
+                        font_color="#D90013",
                     )
                 )
                 col1, col2, col3 = st.columns(3)
@@ -267,10 +269,11 @@ def main():
 
                 st.markdown(
                     *styling(
-                        f"📱 Active User {site}",
+                        f"📶 Active User {site}",
                         font_size=24,
                         text_align="left",
                         tag="h6",
+                        font_color="#D90013",
                     )
                 )
 
@@ -289,10 +292,11 @@ def main():
 
                 st.markdown(
                     *styling(
-                        f"📞 User Throughput {site}",
+                        f"📶 User Throughput {site}",
                         font_size=24,
                         text_align="left",
                         tag="h6",
+                        font_color="#D90013",
                     )
                 )
 

@@ -8,7 +8,9 @@ __pycache__/
 
 # Distribution / packaging
 test/
+script/
 test*.*
+site.*
 *.txt
 *.lock
 *.ini

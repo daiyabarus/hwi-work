@@ -552,7 +552,7 @@ class ChartGenerator:
             plot_bgcolor="#F5F5F5",
             paper_bgcolor="#F5F5F5",
             margin=dict(l=20, r=20, t=40, b=20),
-            hoverlabel=dict(font_size=16, font_family="Vodafone"),
+            hoverlabel=dict(font_size=16, font_family="Plus Jakarta Sans"),
             hovermode="x unified",
             height=350,
             showlegend=True,
