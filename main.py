@@ -114,50 +114,51 @@ class QueryManager:
             st.error(f"Error fetching data: {e}")
             return pd.DataFrame()
 
-    def get_mcom_data(self, siteid):
-        query = text(
-            """
-        SELECT "Site_ID", "NODE_ID", "NE_ID", "Cell_Name", "Longitude", "Latitude", "Dir", "Ant_BW",
-               "Ant_Size", "cellId", "eNBId", "KABUPATEN", "LTE"
-        FROM mcom
-        WHERE "Site_ID" LIKE :siteid
-        """
-        )
-        return self.fetch_data(query, {"siteid": siteid})
+    # def get_mcom_data(self, siteid):
+    #     query = text(
+    #         """
+    #     SELECT "Site_ID", "NODE_ID", "NE_ID", "Cell_Name", "Longitude", "Latitude", "Dir", "Ant_BW",
+    #            "Ant_Size", "cellId", "eNBId", "KABUPATEN", "LTE"
+    #     FROM mcom
+    #     WHERE "Site_ID" LIKE :siteid
+    #     """
+    #     )
+    #     return self.fetch_data(query, {"siteid": siteid})
 
-    def get_mcom_neid(self, neid):
-        query = text(
-            """
-        SELECT "Site_ID", "NODE_ID", "NE_ID", "Cell_Name", "Longitude", "Latitude", "Dir", "Ant_BW",
-               "Ant_Size", "cellId", "eNBId", "KABUPATEN", "LTE"
-        FROM mcom
-        WHERE "NE_ID" LIKE :neid
-        """
-        )
-        return self.fetch_data(query, {"neid": neid})
+    # def get_mcom_neid(self, neid):
+    #     query = text(
+    #         """
+    #     SELECT "Site_ID", "NODE_ID", "NE_ID", "Cell_Name", "Longitude", "Latitude", "Dir", "Ant_BW",
+    #            "Ant_Size", "cellId", "eNBId", "KABUPATEN", "LTE"
+    #     FROM mcom
+    #     WHERE "NE_ID" LIKE :neid
+    #     """
+    #     )
+    #     return self.fetch_data(query, {"neid": neid})
 
+    @st.cache_data(ttl=600)
     def get_ltedaily_data(self, siteid, neids, start_date, end_date):
         query = text(
             """
             SELECT *
             FROM ltedaily
-            WHERE "SITEID" LIKE :siteid
-            AND "DATE_ID" BETWEEN :start_date AND :end_date
+            WHERE "siteid" LIKE :siteid
+            AND "date" BETWEEN :start_date AND :end_date
             """
         )
         params = {"siteid": siteid, "start_date": start_date, "end_date": end_date}
 
         if neids:
             neid_conditions = " OR ".join(
-                [f'"NEID" LIKE :neid_{i}' for i in range(len(neids))]
+                [f'"neid" LIKE :neid_{i}' for i in range(len(neids))]
             )
             query = text(
                 f"""
                 SELECT *
                 FROM ltedaily
-                WHERE "SITEID" LIKE :siteid
+                WHERE "siteid" LIKE :siteid
                 AND ({neid_conditions})
-                AND "DATE_ID" BETWEEN :start_date AND :end_date
+                AND "date" BETWEEN :start_date AND :end_date
                 """
             )
             params.update({f"neid_{i}": neid for i, neid in enumerate(neids)})
@@ -166,53 +167,56 @@ class QueryManager:
                 """
                 SELECT *
                 FROM ltedaily
-                WHERE "SITEID" LIKE :siteid
-                AND "DATE_ID" BETWEEN :start_date AND :end_date
+                WHERE "siteid" LIKE :siteid
+                AND "date" BETWEEN :start_date AND :end_date
                 """
             )
 
         return self.fetch_data(query, params)
 
-    def get_ltedaily_payload(self, selected_sites, start_date, end_date):
-        like_conditions = " OR ".join(
-            [f'"SITEID" LIKE :site_{i}' for i in range(len(selected_sites))]
-        )
-        query = text(
-            f"""
-            SELECT
-            "DATE_ID",
-            "SITEID",
-            "NEID",
-            "EutranCell",
-            "Payload_Total(Gb)",
-            "CQI Bh"
-            FROM ltedaily
-            WHERE ({like_conditions})
-            AND "DATE_ID" BETWEEN :start_date AND :end_date
-            """
-        )
-        params = {f"site_{i}": f"%{site}%" for i, site in enumerate(selected_sites)}
-        params.update({"start_date": start_date, "end_date": end_date})
+    # def get_ltedaily_payload(self, selected_sites, start_date, end_date):
+    #     like_conditions = " OR ".join(
+    #         [f'"SITEID" LIKE :site_{i}' for i in range(len(selected_sites))]
+    #     )
+    #     query = text(
+    #         f"""
+    #         SELECT
+    #         "DATE_ID",
+    #         "SITEID",
+    #         "NEID",
+    #         "EutranCell",
+    #         "Payload_Total(Gb)",
+    #         "CQI Bh"
+    #         FROM ltedaily
+    #         WHERE ({like_conditions})
+    #         AND "DATE_ID" BETWEEN :start_date AND :end_date
+    #         """
+    #     )
+    #     params = {f"site_{i}": f"%{site}%" for i, site in enumerate(selected_sites)}
+    #     params.update({"start_date": start_date, "end_date": end_date})
 
-        return self.fetch_data(query, params=params)
+    #     return self.fetch_data(query, params=params)
 
     @st.cache_data(ttl=600)
     def get_ltehourly_data(_self, selected_sites, end_date):
         like_conditions = " OR ".join(
-            [f'"EUtranCellFDD" LIKE :site_{i}' for i in range(len(selected_sites))]
+            [f'"siteid" LIKE :site_{i}' for i in range(len(selected_sites))]
         )
         start_date = pd.Timestamp("today") - pd.Timedelta(days=15)
         query = text(
             f"""
         SELECT
-            "DATE_ID",
-            "EUtranCellFDD",
-            hour_id,
-            "DL_Resource_Block_Utilizing_Rate",
-            "Active User"
+            "date",
+            "time",
+            "siteid",
+            "enodebname",
+            "cellname",
+            "DL_Resource_Block_Utilizing_Rate(%)",
+            "New Active User",
+            "User_DL_Avg_Throughput(Kbps)"
         FROM ltehourly
         WHERE ({like_conditions})
-        AND "DATE_ID" BETWEEN :start_date AND :end_date
+        AND "date" BETWEEN :start_date AND :end_date
         """
         )
         params = {f"site_{i}": f"%{site}%" for i, site in enumerate(selected_sites)}
@@ -220,152 +224,152 @@ class QueryManager:
 
         return _self.fetch_data(query, params=params)
 
-    def get_target_data(self, city, band):
-        # def get_target_data(self, city, band):
-        query = text(
-            """
-        SELECT *
-        FROM target
-        WHERE "City" = :city AND "Band" = :band
-        """
-        )
-        return self.fetch_data(
-            # query, {"city": city, "mc_class": mc_class, "band": band}
-            query,
-            {"city": city, "band": band},
-        )
+    # def get_target_data(self, city, band):
+    #     # def get_target_data(self, city, band):
+    #     query = text(
+    #         """
+    #     SELECT *
+    #     FROM target
+    #     WHERE "City" = :city AND "Band" = :band
+    #     """
+    #     )
+    #     return self.fetch_data(
+    #         # query, {"city": city, "mc_class": mc_class, "band": band}
+    #         query,
+    #         {"city": city, "band": band},
+    #     )
 
-    @st.cache_data(ttl=600)
-    def get_ltemdt_data(_self, selected_sites):
-        like_conditions = " OR ".join(
-            [f'"site" LIKE :site_{i}' for i in range(len(selected_sites))]
-        )
-        query = text(
-            f"""
-        SELECT
-        site,
-        enodebid,
-        ci,
-        sample,
-        rsrp_mean,
-        rsrq_mean,
-        rank,
-        long_grid,
-        lat_grid
-        FROM ltemdt
-        WHERE ({like_conditions})
-        """
-        )
-        params = {f"site_{i}": f"%{site}%" for i, site in enumerate(selected_sites)}
-        return _self.fetch_data(query, params=params)
+    # @st.cache_data(ttl=600)
+    # def get_ltemdt_data(_self, selected_sites):
+    #     like_conditions = " OR ".join(
+    #         [f'"site" LIKE :site_{i}' for i in range(len(selected_sites))]
+    #     )
+    #     query = text(
+    #         f"""
+    #     SELECT
+    #     site,
+    #     enodebid,
+    #     ci,
+    #     sample,
+    #     rsrp_mean,
+    #     rsrq_mean,
+    #     rank,
+    #     long_grid,
+    #     lat_grid
+    #     FROM ltemdt
+    #     WHERE ({like_conditions})
+    #     """
+    #     )
+    #     params = {f"site_{i}": f"%{site}%" for i, site in enumerate(selected_sites)}
+    #     return _self.fetch_data(query, params=params)
 
-    @st.cache_data(ttl=600)
-    def get_ltetastate_data(_self, siteid):
-        like_conditions = " OR ".join(
-            [f'"site" LIKE :site_{i}' for i in range(len(siteid))]
-        )
+    # @st.cache_data(ttl=600)
+    # def get_ltetastate_data(_self, siteid):
+    #     like_conditions = " OR ".join(
+    #         [f'"site" LIKE :site_{i}' for i in range(len(siteid))]
+    #     )
 
-        query = text(
-            f"""
-            SELECT *
-            FROM ltetastate
-            WHERE ({like_conditions})
-            """
-        )
+    #     query = text(
+    #         f"""
+    #         SELECT *
+    #         FROM ltetastate
+    #         WHERE ({like_conditions})
+    #         """
+    #     )
 
-        params = {f"site_{i}": f"%{site}%" for i, site in enumerate(siteid)}
-        return _self.fetch_data(query, params=params)
+    #     params = {f"site_{i}": f"%{site}%" for i, site in enumerate(siteid)}
+    #     return _self.fetch_data(query, params=params)
 
-    def get_mcom_tastate(self, selected_neids):
-        like_conditions = " OR ".join(
-            [f'"NE_ID" LIKE :neid_{i}' for i in range(len(selected_neids))]
-        )
-        query = text(
-            f"""
-        SELECT
-        "Site_ID",
-        "NE_ID",
-        "Cell_Name",
-        "cellId",
-        "eNBId"
-        FROM mcom
-        WHERE ({like_conditions})
-        """
-        )
-        params = {f"neid_{i}": f"%{neid}%" for i, neid in enumerate(selected_neids)}
-        return self.fetch_data(query, params=params)
+    # def get_mcom_tastate(self, selected_neids):
+    #     like_conditions = " OR ".join(
+    #         [f'"NE_ID" LIKE :neid_{i}' for i in range(len(selected_neids))]
+    #     )
+    #     query = text(
+    #         f"""
+    #     SELECT
+    #     "Site_ID",
+    #     "NE_ID",
+    #     "Cell_Name",
+    #     "cellId",
+    #     "eNBId"
+    #     FROM mcom
+    #     WHERE ({like_conditions})
+    #     """
+    #     )
+    #     params = {f"neid_{i}": f"%{neid}%" for i, neid in enumerate(selected_neids)}
+    #     return self.fetch_data(query, params=params)
 
-    def get_vswr_data(self, selected_sites, end_date):
-        like_conditions = " OR ".join(
-            [f'"NE_NAME" LIKE :site_{i}' for i in range(len(selected_sites))]
-        )
+    # def get_vswr_data(self, selected_sites, end_date):
+    #     like_conditions = " OR ".join(
+    #         [f'"NE_NAME" LIKE :site_{i}' for i in range(len(selected_sites))]
+    #     )
 
-        start_date = end_date - pd.Timedelta(days=3)
+    #     start_date = end_date - pd.Timedelta(days=3)
 
-        query = text(
-            f"""
-        SELECT
-            "DATE_ID",
-            "NE_NAME",
-            "RRU",
-            "pmReturnLossAvg",
-            "VSWR"
-        FROM ltevswr
-        WHERE ({like_conditions})
-        AND "DATE_ID" BETWEEN :start_date AND :end_date
-        AND "RRU" NOT LIKE '%RfPort=R%'
-        AND "RRU" NOT LIKE '%RfPort=S%'
-        AND "VSWR" != 0
-        """
-        )
-        params = {f"site_{i}": f"%{site}%" for i, site in enumerate(selected_sites)}
-        params.update({"start_date": start_date, "end_date": end_date})
+    #     query = text(
+    #         f"""
+    #     SELECT
+    #         "DATE_ID",
+    #         "NE_NAME",
+    #         "RRU",
+    #         "pmReturnLossAvg",
+    #         "VSWR"
+    #     FROM ltevswr
+    #     WHERE ({like_conditions})
+    #     AND "DATE_ID" BETWEEN :start_date AND :end_date
+    #     AND "RRU" NOT LIKE '%RfPort=R%'
+    #     AND "RRU" NOT LIKE '%RfPort=S%'
+    #     AND "VSWR" != 0
+    #     """
+    #     )
+    #     params = {f"site_{i}": f"%{site}%" for i, site in enumerate(selected_sites)}
+    #     params.update({"start_date": start_date, "end_date": end_date})
 
-        return self.fetch_data(query, params=params)
+    #     return self.fetch_data(query, params=params)
 
-    def get_busyhour(self, selected_sites, end_date):
-        like_conditions = " OR ".join(
-            [f'"EUtranCellFDD" LIKE :site_{i}' for i in range(len(selected_sites))]
-        )
-        start_date = end_date - pd.Timedelta(days=15)
-        query = text(
-            f"""
-        SELECT
-            "DATE_ID",
-            "EUtranCellFDD",
-            "CQI"
-        FROM ltebusyhour
-        WHERE ({like_conditions})
-        AND "DATE_ID" BETWEEN :start_date AND :end_date
-        """
-        )
-        params = {f"site_{i}": f"%{site}%" for i, site in enumerate(selected_sites)}
-        params.update({"start_date": start_date, "end_date": end_date})
+    # def get_busyhour(self, selected_sites, end_date):
+    #     like_conditions = " OR ".join(
+    #         [f'"EUtranCellFDD" LIKE :site_{i}' for i in range(len(selected_sites))]
+    #     )
+    #     start_date = end_date - pd.Timedelta(days=15)
+    #     query = text(
+    #         f"""
+    #     SELECT
+    #         "DATE_ID",
+    #         "EUtranCellFDD",
+    #         "CQI"
+    #     FROM ltebusyhour
+    #     WHERE ({like_conditions})
+    #     AND "DATE_ID" BETWEEN :start_date AND :end_date
+    #     """
+    #     )
+    #     params = {f"site_{i}": f"%{site}%" for i, site in enumerate(selected_sites)}
+    #     params.update({"start_date": start_date, "end_date": end_date})
 
-        return self.fetch_data(query, params=params)
+    #     return self.fetch_data(query, params=params)
 
-    def get_cqi_cluster(self, eutrancellfdd, start_date, end_date):
-        query = text(
-            """
-            SELECT
-                "DATE_ID",
-                "EUtranCellFDD",
-                "CQI"
-            FROM ltebusyhour
-            WHERE "EUtranCellFDD" LIKE :eutrancellfdd
-            AND "DATE_ID" BETWEEN :start_date AND :end_date
-            """
-        )
-        params = {
-            "eutrancellfdd": eutrancellfdd,
-            "start_date": start_date,
-            "end_date": end_date,
-        }
-        try:
-            return pd.read_sql(query, self.engine, params=params)
-        except Exception as e:
-            st.error(f"Error fetching data: {e}")
-            return pd.DataFrame()
+    # def get_cqi_cluster(self, eutrancellfdd, start_date, end_date):
+    #     query = text(
+    #         """
+    #         SELECT
+    #             "DATE_ID",
+    #             "EUtranCellFDD",
+    #             "CQI"
+    #         FROM ltebusyhour
+    #         WHERE "EUtranCellFDD" LIKE :eutrancellfdd
+    #         AND "DATE_ID" BETWEEN :start_date AND :end_date
+    #         """
+    #     )
+    #     params = {
+    #         "eutrancellfdd": eutrancellfdd,
+    #         "start_date": start_date,
+    #         "end_date": end_date,
+    #     }
+    #     try:
+    #         return pd.read_sql(query, self.engine, params=params)
+    #     except Exception as e:
+    #         st.error(f"Error fetching data: {e}")
+    #         return pd.DataFrame()
 
 
 class ChartGenerator:
@@ -1419,9 +1423,9 @@ class App:
         st.cache_data(ttl=1200)
 
         eutran_mapping = {
-            "L23_F1_S1": ["ME1", "ME01"],
-            "L23_F2_S1": ["MF1", "MF01"],
+            "L23_F2_S1": ["MF1", "MF01", "IF01", "HF01", "OF01"],
             "L23_F1_S2": ["ME2", "ME02"],
+            "L23_F1_S1": ["ME1", "ME01"],
             "L23_F2_S2": ["MF2", "MF02"],
             "L23_F1_S3": ["ME3", "ME03"],
             "L23_F2_S3": ["MF3", "MF03"],
@@ -1486,7 +1490,8 @@ class App:
                     cells_upper = [c.upper() for c in cells]
 
                     if cell.endswith(("MT04", "MT4")) and any(
-                        c.endswith(("MT01", "MT1")) for c in cells_upper
+                        c.endswith(("MT01", "MT1")) or c.endswith(("TT01", "TT02"))
+                        for c in cells_upper
                     ):
                         return "MULSEC SEC 1", ("MT01", "MT1")
                     elif cell.endswith(("MT05", "MT5")) and any(

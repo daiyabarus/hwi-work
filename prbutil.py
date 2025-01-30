@@ -88,7 +88,7 @@ def create_chart(df, site, parameter):
                     y=sector_df_sorted[parameter],
                     mode="lines",
                     name=cell,
-                    line=dict(color=color_mapping.get(cell, "#000000")),
+                    # line=dict(color=color_mapping.get(cell, "#000000")),
                     # hovertemplate=f"<b>{cell}</b><br><b>Date:</b> %{{x}}<br><b>{parameter}:</b> %{{y}}<br><extra></extra>",
                 )
             )
