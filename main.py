@@ -590,93 +590,92 @@ class ChartGenerator:
             with container:
                 st.plotly_chart(fig, use_container_width=True)
 
-    # def create_charts_tastate(self, df):
-    #     plot_columns = [
-    #         "perc_300",
-    #         "perc_500",
-    #         "perc_700",
-    #         "perc_1000",
-    #         "perc_1500",
-    #         "perc_2000",
-    #         "perc_3000",
-    #         "perc_5000",
-    #         "perc_10000",
-    #         "perc_15000",
-    #         "perc_30000",
-    #     ]
+    def create_charts_tastate(self, df):
+        plot_columns = [
+            "perc_300",
+            "perc_500",
+            "perc_700",
+            "perc_1000",
+            "perc_1500",
+            "perc_2000",
+            "perc_3000",
+            "perc_5000",
+            "perc_10000",
+            "perc_15000",
+            "perc_30000",
+        ]
 
-    #     if "ci" in df.columns:
-    #         df = df[["ci", "Cell_Name"] + plot_columns]
-    #         color_by = "ci"
-    #     else:
-    #         df = df[["Cell_Name"] + plot_columns]
-    #         color_by = "Cell_Name"
+        if "ci" in df.columns:
+            df = df[["ci", "Cell_Name"] + plot_columns]
+            color_by = "ci"
+        else:
+            df = df[["Cell_Name"] + plot_columns]
+            color_by = "Cell_Name"
 
-    #     x_values = plot_columns
-    #     unique_values = df[color_by].unique()
-    #     colors = self.get_colors(len(unique_values))
-    #     color_mapping = {value: color for value, color in zip(unique_values, colors)}
+        x_values = plot_columns
+        unique_values = df[color_by].unique()
+        colors = self.get_colors(len(unique_values))
+        color_mapping = {value: color for value, color in zip(unique_values, colors)}
 
-    #     fig = go.Figure()
+        fig = go.Figure()
 
-    #     for value in unique_values:
-    #         filtered_df = df[df[color_by] == value]
-    #         cell_name = filtered_df["Cell_Name"].iloc[0]
-    #         fig.add_trace(
-    #             go.Bar(
-    #                 x=x_values,
-    #                 y=filtered_df.loc[:, x_values].values[0],
-    #                 name=cell_name,
-    #                 marker_color=color_mapping[value],
-    #                 hovertemplate=(
-    #                     f"<b>®️ {cell_name}</b><br>"
-    #                     f"<b></b> %{{x}} - %{{y}}<br>"
-    #                     "<extra></extra>"
-    #                 ),
-    #                 hoverlabel=dict(font_size=16, font_family="Vodafone"),
-    #             )
-    #         )
+        for value in unique_values:
+            filtered_df = df[df[color_by] == value]
+            cell_name = filtered_df["Cell_Name"].iloc[0]
+            fig.add_trace(
+                go.Bar(
+                    x=x_values,
+                    y=filtered_df.loc[:, x_values].values[0],
+                    name=cell_name,
+                    marker_color=color_mapping[value],
+                    hovertemplate=(
+                        f"<b>®️ {cell_name}</b><br>"
+                        f"<b></b> %{{x}} - %{{y}}<br>"
+                        "<extra></extra>"
+                    ),
+                    hoverlabel=dict(font_size=16, font_family="Vodafone"),
+                )
+            )
 
-    #     fig.update_layout(
-    #         barmode="group",
-    #         xaxis_title=None,
-    #         yaxis_title=None,
-    #         plot_bgcolor="#F5F5F5",
-    #         paper_bgcolor="#F5F5F5",
-    #         height=500,
-    #         font=dict(family="Vodafone", size=25, color="#717577"),
-    #         legend=dict(
-    #             orientation="h",
-    #             yanchor="top",
-    #             y=-0.1,
-    #             xanchor="center",
-    #             x=0.5,
-    #             bgcolor="#F5F5F5",
-    #             bordercolor="#F5F5F5",
-    #             itemclick="toggleothers",
-    #             itemdoubleclick="toggle",
-    #             itemsizing="constant",
-    #             font=dict(size=14),
-    #         ),
-    #         margin=dict(l=20, r=20, t=40, b=20),
-    #     )
+        fig.update_layout(
+            barmode="group",
+            xaxis_title=None,
+            yaxis_title=None,
+            plot_bgcolor="#F5F5F5",
+            paper_bgcolor="#F5F5F5",
+            height=500,
+            font=dict(family="Vodafone", size=25, color="#717577"),
+            legend=dict(
+                orientation="h",
+                yanchor="top",
+                y=-0.1,
+                xanchor="center",
+                x=0.5,
+                bgcolor="#F5F5F5",
+                bordercolor="#F5F5F5",
+                itemclick="toggleothers",
+                itemdoubleclick="toggle",
+                itemsizing="constant",
+                font=dict(size=14),
+            ),
+            margin=dict(l=20, r=20, t=40, b=20),
+        )
 
-    #     with stylable_container(
-    #         key="container_with_border",
-    #         css_styles="""
-    #             {
-    #                 background-color: #F5F5F5;
-    #                 border: 2px solid rgba(49, 51, 63, 0.2);
-    #                 border-radius: 0.5rem;
-    #                 padding: calc(1em - 1px)
-    #             }
-    #             """,
-    #     ):
-    #         container = st.container()
-    #         with container:
-    #             st.plotly_chart(fig, use_container_width=True)
+        with stylable_container(
+            key="container_with_border",
+            css_styles="""
+                {
+                    background-color: #F5F5F5;
+                    border: 2px solid rgba(49, 51, 63, 0.2);
+                    border-radius: 0.5rem;
+                    padding: calc(1em - 1px)
+                }
+                """,
+        ):
+            container = st.container()
+            with container:
+                st.plotly_chart(fig, use_container_width=True)
 
-    # MARK: tastate bar
     def create_charts_tastate(self, df, sector):
         plot_columns = [
             "perc_300",

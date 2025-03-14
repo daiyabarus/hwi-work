@@ -1,6 +1,6 @@
 import os
 
-root_dir = r"D:\HW\Export\XML_LTE_NS_20250120"
+root_dir = r"D:\HW\Export\XML_LTE_CS_20250225\XML_LTE_CS_20250225"
 
 for dirpath, dirnames, filenames in os.walk(root_dir):
     for filename in filenames:
