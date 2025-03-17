@@ -1,4 +1,5 @@
 import os
+
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -9,6 +10,7 @@ from plotly.subplots import make_subplots
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from streamlit_extras.mandatory_date_range import date_range_picker
+
 from utils.styles import styling
 
 st.set_page_config(layout="wide")
@@ -28,6 +30,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+
 # Configuration and Database Setup
 def load_config():
     try:
@@ -36,6 +39,7 @@ def load_config():
     except Exception as e:
         st.error(f"Error loading configuration: {e}")
         return None
+
 
 def create_session(cfg):
     if not cfg:
@@ -49,17 +53,42 @@ def create_session(cfg):
         st.error(f"Error creating database session: {e}")
         return None, None
 
+
 # Helper Functions
 def determine_sector(cell: str) -> int:
-    sector_mapping = {"1": 1, "2": 2, "3": 3, "4": 1, "5": 2, "6": 3, "7": 1, "8": 2, "9": 3}
+    sector_mapping = {
+        "1": 1,
+        "2": 2,
+        "3": 3,
+        "4": 1,
+        "5": 2,
+        "6": 3,
+        "7": 1,
+        "8": 2,
+        "9": 3,
+    }
     return sector_mapping.get(cell[-1].upper() if cell else "0", 0)
 
+
 def colors():
-    return ["#9e0142", "#fdae61", "#66c2a5", "#d53e4f", "#5e4fa2", "#f46d43", "#abdda4", "#3288bd", "#fee08b", "#e6f598"]
+    return [
+        "#9e0142",
+        "#fdae61",
+        "#66c2a5",
+        "#d53e4f",
+        "#5e4fa2",
+        "#f46d43",
+        "#abdda4",
+        "#3288bd",
+        "#fee08b",
+        "#e6f598",
+    ]
+
 
 def get_header(cells: list[str]) -> str:
     sectors = sorted({f"Sector {cell[-1]}" for cell in cells if cell})
     return ", ".join(sectors) or "No Sectors"
+
 
 def create_chart(df, site, parameter):
     if df.empty:
@@ -91,7 +120,13 @@ def create_chart(df, site, parameter):
         title_x=0.4,
         template="plotly_white",
         # xaxis=dict(tickformat="%m/%d/%Y %H:%M", tickangle=-45, type="date", tickmode="auto", nticks=15),
-        xaxis=dict(tickformat="%m/%d/%Y", tickangle=-45, type="date", tickmode="auto", nticks=15),
+        xaxis=dict(
+            tickformat="%m/%d/%Y",
+            tickangle=-45,
+            type="date",
+            tickmode="auto",
+            nticks=15,
+        ),
         yaxis_title=parameter,
         autosize=True,
         height=400,
@@ -112,6 +147,7 @@ def create_chart(df, site, parameter):
         ),
     )
     return fig
+
 
 # Main Function
 def main():
@@ -134,7 +170,10 @@ def main():
     selected_sites = st.multiselect("Select Site IDs", site_list)
 
     if "date_range" not in st.session_state:
-        st.session_state["date_range"] = (pd.Timestamp.today() - pd.Timedelta(days=14), pd.Timestamp.today())
+        st.session_state["date_range"] = (
+            pd.Timestamp.today() - pd.Timedelta(days=8),
+            pd.Timestamp.today(),
+        )
 
     date_range = date_range_picker("DATE RANGE", *st.session_state["date_range"])
     df = None
@@ -146,7 +185,9 @@ def main():
             return
         try:
             start_date, end_date = date_range
-            like_conditions = " OR ".join([f'"eNodeB Name" LIKE :site_{i}' for i in range(len(selected_sites))])
+            like_conditions = " OR ".join(
+                [f'"eNodeB Name" LIKE :site_{i}' for i in range(len(selected_sites))]
+            )
             query = text(
                 """
                 SELECT
@@ -176,7 +217,9 @@ def main():
                 st.warning(f"No data available for site {site}.")
                 continue
 
-            sac.divider(label=site, icon="graph-up", align="center", size="xl", color="indigo")
+            sac.divider(
+                label=site, icon="graph-up", align="center", size="xl", color="indigo"
+            )
             parameters = [
                 ("Utilization", "DL Resource Block Utilizing Rate %_FIX"),
                 ("Active User", "Active User"),
@@ -199,6 +242,7 @@ def main():
                         sector_df = site_df[site_df["sector"] == sector]
                         fig = create_chart(sector_df, site, param)
                         st.plotly_chart(fig, use_container_width=True)
+
 
 if __name__ == "__main__":
     main()
