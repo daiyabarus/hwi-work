@@ -1,5 +1,6 @@
-import math
+# import math
 import os
+from datetime import timedelta
 from typing import Any
 
 import altair as alt
@@ -7,10 +8,12 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
-import streamlit_antd_components as sac
+
+# import streamlit_antd_components as sac
 import toml
 from omegaconf import DictConfig, OmegaConf
-from plotly.subplots import make_subplots
+
+# from plotly.subplots import make_subplots
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from streamlit_extras.mandatory_date_range import date_range_picker
@@ -60,7 +63,7 @@ class DataFrameManager:
         dataframe = self.get_dataframe(name)
         if dataframe is not None:
             st.header(header)
-            st.write(dataframe)
+            st.dataframe(dataframe)
 
 
 class StreamlitInterface:
@@ -76,6 +79,9 @@ class StreamlitInterface:
         band_options = ["L1800", "L900", "L2100", "L2300-ME", "L2300-MF", "L2300-MV"]
         return st.multiselect("BAND", band_options)
 
+    def nbr_selection(self, sitelist):
+        return st.multiselect("COSITE & 1ST TIER", sitelist)
+
     def select_date_range(self):
         if "date_range" not in st.session_state:
             st.session_state["date_range"] = (
@@ -89,6 +95,83 @@ class StreamlitInterface:
             default_end=st.session_state["date_range"][1],
         )
         return date_range
+
+
+class DateCalc:
+    def __init__(
+        self, dataframe: pd.DataFrame | None = None, date_column: str | None = None
+    ):
+        """Initialize with optional dataframe and date column."""
+        self.df = dataframe
+        self.col = date_column
+
+    def set_dataframe(self, dataframe: pd.DataFrame, date_column: str):
+        """Set or update the dataframe and date column."""
+        self.df = dataframe
+        self.col = date_column
+
+    def maxdate(self):
+        """Return the maximum date in the date column."""
+        if self.df is None or self.col not in self.df.columns:
+            raise ValueError("DataFrame or date column not set")
+        return self.df[self.col].max()
+
+    def numdays(self, days: int):
+        """Return the date that is 'days' before the maximum date."""
+        return self.maxdate() - timedelta(days=days)
+
+    def get_max_date(self):
+        """Get the most recent date."""
+        return self.maxdate()
+
+    def get_date_minus(self, days: int):
+        """Get the date 'days' before the max date."""
+        return self.numdays(days)
+
+    def calculate_avg_by_date(
+        self, date, avg_columns: list[str], keep_columns: list[str]
+    ):
+        """Calculate average for specific date with specified columns."""
+        if self.df is None or self.col not in self.df.columns:
+            raise ValueError("DataFrame or date column not set")
+        date_df = self.df[self.df[self.col] == date]
+        if date_df.empty:
+            return pd.Series(dict.fromkeys(keep_columns + avg_columns))
+        avg_values = date_df[avg_columns].mean()
+        result = pd.Series({col: date_df[col].iloc[0] for col in keep_columns})
+        return pd.concat([result, avg_values])
+
+    def calculate_all_averages(
+        self, avg_columns: list[str], keep_columns: list[str], num_days: int = 3
+    ):
+        """Calculate averages for max date and previous days based on num_days, plus total average."""
+        if self.df is None or self.col not in self.df.columns:
+            raise ValueError("DataFrame or date column not set")
+
+        dates = [self.get_date_minus(i) for i in range(num_days)][
+            ::-1
+        ]  # Reverse to get oldest to newest
+
+        results = [
+            self.calculate_avg_by_date(date, avg_columns, keep_columns)
+            for date in dates
+            if date in self.df[self.col].values
+        ]
+
+        if not results:
+            return pd.DataFrame(
+                columns=keep_columns + [f"Average {col}" for col in avg_columns]
+            )
+
+        result_df = pd.DataFrame(results)
+
+        total_avg = pd.Series(
+            {col: "" if col == self.col else "Average" for col in keep_columns}
+        )
+        total_avg = pd.concat([total_avg, result_df[avg_columns].mean()])
+        final_df = pd.concat([result_df, pd.DataFrame([total_avg])], ignore_index=True)
+        final_df.columns = keep_columns + [f"Avg {col}" for col in avg_columns]
+        return final_df
 
 
 class QueryManager:
@@ -142,6 +225,34 @@ class QueryManager:
                 placeholders = ", ".join(f":band_{i}" for i in range(len(band)))
                 query_parts.append(f'AND "band" IN ({placeholders})')
                 params.update({f"band_{i}": b for i, b in enumerate(band)})
+
+        return _self._fetch_data(text(" ".join(query_parts)), params)
+
+    @st.cache_data(ttl=600)
+    def get_nbr_data(
+        _self,
+        siteid: list[str] | str,
+        start_date: str,
+        end_date: str,
+    ) -> pd.DataFrame:
+        """Fetch LTE daily data with optional multiple siteid filter."""
+        params = {
+            "start_date": start_date,
+            "end_date": end_date,
+        }
+
+        query_parts = [
+            "SELECT * FROM ltedaily",
+            'WHERE "date" BETWEEN :start_date AND :end_date',
+        ]
+
+        if isinstance(siteid, str):
+            query_parts.append('AND "siteid" LIKE :siteid')
+            params["siteid"] = f"%{siteid}%"
+        else:
+            placeholders = ", ".join(f":siteid_{i}" for i in range(len(siteid)))
+            query_parts.append(f'AND "siteid" IN ({placeholders})')
+            params.update({f"siteid_{i}": s for i, s in enumerate(siteid)})
 
         return _self._fetch_data(text(" ".join(query_parts)), params)
 
@@ -260,7 +371,6 @@ class ChartGenerator:
         for idx, sector in enumerate(sorted(df["sector"].unique())):
             sector_data = df[df["sector"] == sector]
 
-            # Generate title based on the last digits of cell_name
             unique_last_digits = sorted(
                 {
                     cell[-1]
@@ -396,8 +506,17 @@ class ChartGenerator:
 
         df["date"] = pd.to_datetime(df["date"])
 
-        unique_cells = df["cell_name"].unique()
-        # Generate colors for each unique cell
+        if "siteid" in df.columns and "sector" in df.columns:
+            df["cellsector"] = (
+                df["neid"].astype(str) + "_S" + df["sector"].astype(int).astype(str)
+            )
+        else:
+            st.warning(
+                "Kolom 'siteid' atau 'sector' tidak ditemukan. Menggunakan 'cell_name' sebagai fallback."
+            )
+            df["cellsector"] = df["cell_name"]
+
+        unique_cells = df["cellsector"].unique()
         colors = self.get_colors(len(unique_cells))
         color_mapping = dict(zip(unique_cells, colors))
 
@@ -418,32 +537,32 @@ class ChartGenerator:
                             x=alt.X("date:T", title=""),
                             y=alt.Y(f"{param}:Q", title=""),
                             color=alt.Color(
-                                "cell_name:N",
+                                "cellsector:N",
                                 scale=alt.Scale(
-                                    domain=list(
-                                        color_mapping.keys()
-                                    ),  # List of cell names
-                                    range=list(
-                                        color_mapping.values()
-                                    ),  # List of corresponding colors
+                                    domain=list(color_mapping.keys()),
+                                    range=list(color_mapping.values()),
                                 ),
                                 legend=alt.Legend(
                                     title=None,
                                     orient="bottom",
-                                    columns=2,
+                                    columns=5,
                                     direction="horizontal",
-                                    columnPadding=10,
+                                    columnPadding=-4,
                                     symbolLimit=0,
                                     labelLimit=0,
                                     labelFontSize=12,
                                     labelColor="black",
                                 ),
                             ),
-                            tooltip=["cell_name", "date", param],
+                            tooltip=[
+                                "cellsector",
+                                "date",
+                                param,
+                            ],
                         )
                         .properties(
-                            title=f"{param.replace('_', ' ').title().upper()} - {site}",
-                            height=300,
+                            title=f"{param.replace('_', ' ').title().upper()}",
+                            height=450,
                             width="container",
                         )
                         .interactive()
@@ -598,7 +717,9 @@ class ChartGenerator:
                     xaxis_title=None,
                     yaxis_title=None,
                     margin=dict(t=20, l=20, r=20, b=20),
-                    hoverlabel=dict(font_size=16, font_family="Vodafone"),
+                    hoverlabel=dict(
+                        font_size=16, font_family="Plus Jakarta Sans Light"
+                    ),
                     hovermode="x unified",
                     legend=dict(
                         orientation="h",
@@ -660,7 +781,6 @@ class ChartGenerator:
             st.error("No TA index columns found in the data")
             return
 
-        # Prepare the dataframe with available columns
         required_columns = ["cell_name"]
         if "localcell_id" in df.columns:
             required_columns.append("localcell_id")
@@ -680,7 +800,6 @@ class ChartGenerator:
         colors = self.get_colors(len(unique_values))
         color_mapping = {value: color for value, color in zip(unique_values, colors)}
 
-        # Create separate charts for each sector in rows
         for sector_num in sorted(df["sector"].unique()):
             sector_data = df[df["sector"] == sector_num]
             unique_last_digits = sorted(
@@ -713,7 +832,6 @@ class ChartGenerator:
                 with container:
                     fig = go.Figure()
 
-                    # Add bars for each value in the sector
                     for value in sector_data[color_by].unique():
                         filtered_df = sector_data[sector_data[color_by] == value]
                         cell_name = filtered_df["cell_name"].iloc[0]
@@ -728,7 +846,9 @@ class ChartGenerator:
                                     f"<b></b> %{{x}} - %{{y}}<br>"
                                     "<extra></extra>"
                                 ),
-                                hoverlabel=dict(font_size=16, font_family="Vodafone"),
+                                hoverlabel=dict(
+                                    font_size=16, font_family="Plus Jakarta Sans Light"
+                                ),
                             )
                         )
 
@@ -738,11 +858,13 @@ class ChartGenerator:
                         yaxis_title=None,
                         plot_bgcolor="#F5F5F5",
                         paper_bgcolor="#F5F5F5",
-                        height=500,
+                        height=400,
                         width=800,
                         title_text=title,
                         title_x=0.4,
-                        font=dict(family="Vodafone", size=25, color="#717577"),
+                        font=dict(
+                            family="Plus Jakarta Sans Light", size=25, color="#717577"
+                        ),
                         legend=dict(
                             orientation="h",
                             yanchor="top",
@@ -756,12 +878,12 @@ class ChartGenerator:
                             itemsizing="constant",
                             font=dict(size=14),
                         ),
-                        margin=dict(l=20, r=20, t=40, b=20),
+                        margin=dict(l=20, r=20, t=20, b=20),
                         yaxis=dict(
-                            tickfont=dict(size=14, color="#000000"),
+                            tickfont=dict(size=12, color="#000000"),
                         ),
                         xaxis=dict(
-                            tickfont=dict(size=14, color="#000000"),
+                            tickfont=dict(size=12, color="#000000"),
                         ),
                     )
 
@@ -773,6 +895,7 @@ class App:
         self.config = Config().load()
         self.database_session = DatabaseSession(self.config)
         self.query_manager = None
+        self.avg_calc = DateCalc()
         self.dataframe_manager = DataFrameManager()
         self.streamlit_interface = StreamlitInterface()
         self.chart_generator = ChartGenerator()
@@ -797,6 +920,9 @@ class App:
 
             selected_band = self.streamlit_interface.neid_selection()
             st.session_state.selected_band = selected_band
+
+            selected_nbr = self.streamlit_interface.nbr_selection(sitelist)
+            st.session_state.selected_nbr = selected_nbr
 
             if st.button("Run Query"):
                 if selected_sites and date_range:
@@ -857,14 +983,96 @@ class App:
                     df_daily_all = self.dataframe_manager.get_dataframe(
                         f"dailyall_{site}"
                     )
+                    if df_daily_all is not None and not df_daily_all.empty:
+                        self.avg_calc.set_dataframe(df_daily_all, "date")
+                        avg_result = self.avg_calc.calculate_all_averages(
+                            [
+                                "rrc_setup_sr_service",
+                                "erab_setup_sr_all",
+                                "call_setup_sr",
+                                "csfb_execution_sr",
+                                "csfb_preparation_sr",
+                                "service_drop_rate",
+                                "intrafreq_ho_out_sr",
+                                "inter_frequency_handover_sr",
+                                "lte_to_geran_redirection_sr",
+                                "uplink_interference",
+                                "user_dl_avg_throughput_mbps",
+                                "cqi",
+                                "se",
+                            ],
+                            ["enodeb_name", "region", "date"],
+                            num_days=3,
+                        )
+                        # st.table(avg_result)
+                        # st.dataframe(avg_result.set_index(avg_result.columns[0]))
+                        html_table = "<table class='custom-table'>"
+                        html_table += (
+                            "<thead><tr>"
+                            + "".join(f"<th>{col}</th>" for col in avg_result.columns)
+                            + "</tr></thead>"
+                        )
+                        html_table += "<tbody>"
+                        for row in avg_result.itertuples(index=False):
+                            html_table += (
+                                "<tr>"
+                                + "".join(f"<td>{val}</td>" for val in row)
+                                + "</tr>"
+                            )
+                        html_table += "</tbody></table>"
+
+                        # Apply custom CSS styling and render
+                        st.markdown(
+                            """
+                            <style>
+                            .custom-table {
+                                font-size: 10px !important;
+                                font-family: Arial, sans-serif !important;
+                                border-collapse: collapse !important;
+                                text-align: center !important;
+                                width: 100% !important;
+                            }
+                            .custom-table th {
+                                background-color: #F5F5F5 !important;
+                                border: 1px solid #ddd !important;
+                                padding: 2px !important;
+                                text-align: center !important;
+                                vertical-align: top !important;
+                                height: 20px !important;
+                            }
+                            .custom-table td {
+                                border: 1px solid #ddd !important;
+                                padding: 2px !important;
+                                vertical-align: top !important;
+                                text-align: center !important;
+                                height: 20px !important;
+                            }
+                            .custom-table tr {
+                                height: 20px !important;
+                            }
+                            .custom-table tr:nth-child(even) {
+                                background-color: #f9f9f9 !important;
+                            }
+                            .custom-table tr:hover {
+                                background-color: #f5f5f5 !important;
+                            }
+                            </style>
+                            """
+                            + html_table,
+                            unsafe_allow_html=True,
+                        )
+
+                    # self.dataframe_manager.display_dataframe(
+                    #     f"dailyall_{site}", f"Daily ALL {site}"
+                    # )
                     df_hourly = self.dataframe_manager.get_dataframe(f"hourly_{site}")
                     if df_daily_sow is not None:
-                        sac.divider(
-                            label="PAGE 1",
-                            align="center",
-                            size="xl",
-                            color="#DC0013",
-                        )
+                        # sac.divider(
+                        #     label="PAGE 1",
+                        #     align="center",
+                        #     size="xl",
+                        #     color="#DC0013",
+                        # )
                         st.markdown(
                             *styling(
                                 f"📶 RRC SR {site}",
@@ -945,6 +1153,8 @@ class App:
                             xrule=False,
                             yline="98.0",
                         )
+                        # st.markdown(*styling(""))
+                        # st.markdown(*styling(""))
                         st.markdown(
                             *styling(
                                 f"📶 Inter HO {site}",
@@ -977,13 +1187,13 @@ class App:
                             xrule=False,
                             yline="99.9",
                         )
-                        sac.divider(
-                            label="PAGE 2",
-                            # icon="graph-up",
-                            align="center",
-                            size="xl",
-                            color="#DC0013",
-                        )
+                        # sac.divider(
+                        #     label="PAGE 2",
+                        #     # icon="graph-up",
+                        #     align="center",
+                        #     size="xl",
+                        #     color="#DC0013",
+                        # )
                         st.markdown(
                             *styling(
                                 f"📶 RSSI {site}",
@@ -1095,14 +1305,14 @@ class App:
                             "active_user",
                             xrule=False,
                         )
-                        st.markdown(*styling(""))
-                        st.markdown(*styling(""))
-                        sac.divider(
-                            label="PAGE 3",
-                            align="center",
-                            size="xl",
-                            color="#DC0013",
-                        )
+                        # st.markdown(*styling(""))
+                        # st.markdown(*styling(""))
+                        # sac.divider(
+                        #     label="PAGE 3",
+                        #     align="center",
+                        #     size="xl",
+                        #     color="#DC0013",
+                        # )
                         st.markdown(
                             *styling(
                                 f"📶 PRB Utilization {site}",
@@ -1181,64 +1391,85 @@ class App:
                         f"tastate_{site}"
                     )
 
+                    st.markdown(
+                        *styling(
+                            f"📶 Table Timing Advance {site}",
+                            font_size=24,
+                            text_align="left",
+                            tag="h4",
+                        )
+                    )
+
                     if df_timingadvance is not None and not df_timingadvance.empty:
-                        # Add sector column and sort by sector
-                        chart_generator = (
-                            ChartGenerator()
-                        )  # Instantiate to use determine_sector
+                        chart_generator = ChartGenerator()
                         df_timingadvance["sector"] = df_timingadvance[
                             "cell_name"
                         ].apply(chart_generator.determine_sector)
                         df_timingadvance = df_timingadvance.sort_values(by="sector")
 
-                        # Inject custom CSS for st.table styling
+                        html_table = "<table class='custom-table'>"
+                        html_table += (
+                            "<thead><tr>"
+                            + "".join(
+                                f"<th>{col}</th>" for col in df_timingadvance.columns
+                            )
+                            + "</tr></thead>"
+                        )
+                        html_table += "<tbody>"
+                        for row in df_timingadvance.itertuples(index=False):
+                            html_table += (
+                                "<tr>"
+                                + "".join(f"<td>{val}</td>" for val in row)
+                                + "</tr>"
+                            )
+                        html_table += "</tbody></table>"
+
+                        # Apply custom CSS styling and render
                         st.markdown(
                             """
                             <style>
-                            /* Target all tables generated by st.table */
-                            .stTable {
+                            .custom-table {
                                 font-size: 10px !important;
                                 font-family: Arial, sans-serif !important;
                                 border-collapse: collapse !important;
+                                text-align: center !important;
                                 width: 100% !important;
                             }
-                            .stTable th {
+                            .custom-table th {
                                 background-color: #F5F5F5 !important;
                                 border: 1px solid #ddd !important;
-                                padding: 2px !important; /* Reduced padding */
-                                text-align: left !important;
+                                padding: 2px !important;
+                                text-align: center !important;
                                 vertical-align: top !important;
-                                height: 20px !important; /* Reduced height */
+                                height: 20px !important;
                             }
-                            .stTable td {
+                            .custom-table td {
                                 border: 1px solid #ddd !important;
-                                padding: 2px !important; /* Reduced padding */
+                                padding: 2px !important;
                                 vertical-align: top !important;
-                                height: 20px !important; /* Reduced height */
+                                text-align: center !important;
+                                height: 20px !important;
                             }
-                            .stTable tr {
-                                height: 20px !important; /* Enforce smaller row height */
+                            .custom-table tr {
+                                height: 20px !important;
                             }
-                            .stTable tr:nth-child(even) {
+                            .custom-table tr:nth-child(even) {
                                 background-color: #f9f9f9 !important;
                             }
-                            .stTable tr:hover {
+                            .custom-table tr:hover {
                                 background-color: #f5f5f5 !important;
                             }
                             </style>
-                            """,
+                            """
+                            + html_table,
                             unsafe_allow_html=True,
                         )
 
-                        # Display the sorted table
-                        st.table(df_timingadvance)
-
-                        # Chart display
                         col1 = st.columns(1)[0]
                         with col1:
                             st.markdown(
                                 *styling(
-                                    f"📶 TA State for Site {site}",
+                                    f"📶 Graph Timing Advance {site}",
                                     font_size=24,
                                     text_align="left",
                                     tag="h4",
