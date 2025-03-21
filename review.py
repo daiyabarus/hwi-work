@@ -8,8 +8,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
-
-# import streamlit_antd_components as sac
+import streamlit_antd_components as sac
 import toml
 from omegaconf import DictConfig, OmegaConf
 
@@ -148,9 +147,7 @@ class DateCalc:
         if self.df is None or self.col not in self.df.columns:
             raise ValueError("DataFrame or date column not set")
 
-        dates = [self.get_date_minus(i) for i in range(num_days)][
-            ::-1
-        ]  # Reverse to get oldest to newest
+        dates = [self.get_date_minus(i) for i in range(num_days)][::-1]
 
         results = [
             self.calculate_avg_by_date(date, avg_columns, keep_columns)
@@ -562,7 +559,7 @@ class ChartGenerator:
                         )
                         .properties(
                             title=f"{param.replace('_', ' ').title().upper()}",
-                            height=450,
+                            height=350,
                             width="container",
                         )
                         .interactive()
@@ -755,7 +752,6 @@ class ChartGenerator:
                 st.plotly_chart(fig, use_container_width=True)
 
     def create_charts_timingadvance(self, df, sector):
-        # Define all possible TA index columns
         all_plot_columns = [
             "l_ta_ue_index0",
             "l_ta_ue_index1",
@@ -775,7 +771,6 @@ class ChartGenerator:
             "l_ta_ue_index15",
         ]
 
-        # Get only the columns that exist in the DataFrame
         available_columns = [col for col in all_plot_columns if col in df.columns]
         if not available_columns:
             st.error("No TA index columns found in the data")
@@ -936,16 +931,13 @@ class App:
                                 df_daily = self.query_manager.get_ltedaily_data(
                                     site, start_date_str, end_date_str, selected_band
                                 )
-                                self.dataframe_manager.add_dataframe(
-                                    f"dailysow_{site}", df_daily
-                                )
                             else:
                                 df_daily = self.query_manager.get_ltedaily_wo_band(
                                     site, start_date_str, end_date_str
                                 )
-                                self.dataframe_manager.add_dataframe(
-                                    f"dailysow_{site}", df_daily
-                                )
+                            self.dataframe_manager.add_dataframe(
+                                f"dailysow_{site}", df_daily
+                            )
 
                             df_daily_all = self.query_manager.get_ltedaily_wo_band(
                                 site, start_date_str, end_date_str
@@ -953,6 +945,46 @@ class App:
                             self.dataframe_manager.add_dataframe(
                                 f"dailyall_{site}", df_daily_all
                             )
+
+                            if selected_nbr:
+                                df_nbr = self.query_manager.get_nbr_data(
+                                    selected_nbr, start_date_str, end_date_str
+                                )
+                                df_daily_all_copy = df_daily_all.copy()
+                                df_nbr_copy = df_nbr.copy()
+                                enodeb_name = (
+                                    df_daily_all["enodeb_name"].iloc[0]
+                                    if not df_daily_all.empty
+                                    and "enodeb_name" in df_daily_all.columns
+                                    else site
+                                )
+                                df_daily_all_copy["sitesow"] = enodeb_name
+                                df_nbr_copy["sitesow"] = enodeb_name
+                                df_sitesow = pd.concat(
+                                    [df_daily_all_copy, df_nbr_copy], ignore_index=True
+                                )
+                                self.dataframe_manager.add_dataframe(
+                                    f"sitesow_{site}", df_sitesow
+                                )
+                            else:
+                                df_daily_all_copy = df_daily_all.copy()
+                                enodeb_name = (
+                                    df_daily_all["enodeb_name"].iloc[0]
+                                    if not df_daily_all.empty
+                                    and "enodeb_name" in df_daily_all.columns
+                                    else site
+                                )
+                                df_daily_all_copy["sitesow"] = enodeb_name
+                                self.dataframe_manager.add_dataframe(
+                                    f"sitesow_{site}", df_daily_all_copy
+                                )
+
+                            df_nbr = self.query_manager.get_nbr_data(
+                                selected_nbr if selected_nbr else [site],
+                                start_date_str,
+                                end_date_str,
+                            )
+                            self.dataframe_manager.add_dataframe(f"nbr_{site}", df_nbr)
 
                             df_hourly = self.query_manager.get_ltehourly_data(
                                 selected_sites
@@ -971,9 +1003,7 @@ class App:
         if any(
             key.startswith("dailysow_") for key in self.dataframe_manager.dataframes
         ):
-            tab1, tab2, tab3, tab4 = st.tabs(
-                ["Sow Level", "Site Level", "Hourly", "TA"]
-            )
+            tab1, tab2, tab3, tab4 = st.tabs(["Sow Level", "Site Level", "GSM", "TA"])
 
             with tab1:
                 for site in selected_sites:
@@ -982,6 +1012,30 @@ class App:
                     )
                     df_daily_all = self.dataframe_manager.get_dataframe(
                         f"dailyall_{site}"
+                    )
+                    df_daily_nbr = self.dataframe_manager.get_dataframe(f"nbr_{site}")
+                    df_sitesow = self.dataframe_manager.get_dataframe(f"sitesow_{site}")
+                    st.markdown(
+                        *styling(
+                            f"OSS Performance - {site}",
+                            font_size=28,
+                            text_align="Center",
+                            background_color="#DC0013",
+                            tag="h6",
+                            font_color="#FFFFFF",
+                        )
+                    )
+                    sac.divider(
+                        align="center",
+                        size="s",
+                    )
+                    st.markdown(
+                        *styling(
+                            "📶 KPI Performance 3 Days (New)",
+                            font_size=24,
+                            text_align="left",
+                            tag="h6",
+                        )
                     )
                     if df_daily_all is not None and not df_daily_all.empty:
                         self.avg_calc.set_dataframe(df_daily_all, "date")
@@ -1004,8 +1058,6 @@ class App:
                             ["enodeb_name", "region", "date"],
                             num_days=3,
                         )
-                        # st.table(avg_result)
-                        # st.dataframe(avg_result.set_index(avg_result.columns[0]))
                         html_table = "<table class='custom-table'>"
                         html_table += (
                             "<thead><tr>"
@@ -1021,7 +1073,89 @@ class App:
                             )
                         html_table += "</tbody></table>"
 
-                        # Apply custom CSS styling and render
+                        st.markdown(
+                            """
+                            <style>
+                            .custom-table {
+                                font-size: 10px !important;
+                                font-family: Arial, sans-serif !important;
+                                border-collapse: collapse !important;
+                                text-align: center !important;
+                                width: 100% !important;
+                            }
+                            .custom-table th {
+                                background-color: #F5F5F5 !important;
+                                border: 1px solid #ddd !important;
+                                padding: 2px !important;
+                                text-align: center !important;
+                                vertical-align: top !important;
+                                height: 20px !important;
+                            }
+                            .custom-table td {
+                                border: 1px solid #ddd !important;
+                                padding: 2px !important;
+                                vertical-align: top !important;
+                                text-align: center !important;
+                                height: 20px !important;
+                            }
+                            .custom-table tr {
+                                height: 20px !important;
+                            }
+                            .custom-table tr:nth-child(even) {
+                                background-color: #f9f9f9 !important;
+                            }
+                            .custom-table tr:hover {
+                                background-color: #f5f5f5 !important;
+                            }
+                            </style>
+                            """
+                            + html_table,
+                            unsafe_allow_html=True,
+                        )
+                    st.markdown(
+                        *styling(
+                            "📶 KPI Performance 5 Days (1st tier)",
+                            font_size=24,
+                            text_align="left",
+                            tag="h6",
+                        )
+                    )
+                    if df_sitesow is not None and not df_sitesow.empty:
+                        self.avg_calc.set_dataframe(df_sitesow, "date")
+                        avg_result = self.avg_calc.calculate_all_averages(
+                            [
+                                "rrc_setup_sr_service",
+                                "erab_setup_sr_all",
+                                "call_setup_sr",
+                                "csfb_execution_sr",
+                                "csfb_preparation_sr",
+                                "service_drop_rate",
+                                "intrafreq_ho_out_sr",
+                                "inter_frequency_handover_sr",
+                                "lte_to_geran_redirection_sr",
+                                "uplink_interference",
+                                "user_dl_avg_throughput_mbps",
+                                "cqi",
+                                "se",
+                            ],
+                            ["sitesow", "region", "date"],
+                            num_days=5,
+                        )
+                        html_table = "<table class='custom-table'>"
+                        html_table += (
+                            "<thead><tr>"
+                            + "".join(f"<th>{col}</th>" for col in avg_result.columns)
+                            + "</tr></thead>"
+                        )
+                        html_table += "<tbody>"
+                        for row in avg_result.itertuples(index=False):
+                            html_table += (
+                                "<tr>"
+                                + "".join(f"<td>{val}</td>" for val in row)
+                                + "</tr>"
+                            )
+                        html_table += "</tbody></table>"
+
                         st.markdown(
                             """
                             <style>
@@ -1062,17 +1196,20 @@ class App:
                             unsafe_allow_html=True,
                         )
 
-                    # self.dataframe_manager.display_dataframe(
-                    #     f"dailyall_{site}", f"Daily ALL {site}"
-                    # )
+                    st.markdown(*styling(""))
+                    st.markdown(
+                        *styling(
+                            f"KPI Trend Chart (1 Week) - {site}",
+                            font_size=28,
+                            text_align="Center",
+                            background_color="#DC0013",
+                            tag="h6",
+                            font_color="#FFFFFF",
+                        )
+                    )
+                    st.markdown(*styling(""))
                     df_hourly = self.dataframe_manager.get_dataframe(f"hourly_{site}")
                     if df_daily_sow is not None:
-                        # sac.divider(
-                        #     label="PAGE 1",
-                        #     align="center",
-                        #     size="xl",
-                        #     color="#DC0013",
-                        # )
                         st.markdown(
                             *styling(
                                 f"📶 RRC SR {site}",
@@ -1171,9 +1308,19 @@ class App:
                             xrule=False,
                             yline="98.0",
                         )
+                        # st.markdown(*styling(""))
+                        # st.markdown(*styling(""))
+                        # st.markdown(*styling(""))
+                        sac.divider(
+                            label="PAGE 2",
+                            # icon="graph-up",
+                            align="center",
+                            size="xl",
+                            color="#DC0013",
+                        )
                         st.markdown(
                             *styling(
-                                f"📶 L2U SR {site}",
+                                f"📶 L2G SR {site}",
                                 font_size=24,
                                 text_align="left",
                                 tag="h6",
@@ -1258,6 +1405,13 @@ class App:
                             xrule=False,
                             yline="1.4",
                         )
+                        sac.divider(
+                            label="PAGE 3",
+                            # icon="graph-up",
+                            align="center",
+                            size="xl",
+                            color="#DC0013",
+                        )
                         st.markdown(
                             *styling(
                                 f"📶 User Throughput {site}",
@@ -1328,9 +1482,21 @@ class App:
                             "DL Resource Block Utilizing Rate %_FIX",
                             xrule=False,
                         )
+                        st.markdown(*styling(""))
                         st.markdown(
                             *styling(
-                                f"📶 Payload {site}",
+                                f"Payload - {site}",
+                                font_size=28,
+                                text_align="Center",
+                                background_color="#DC0013",
+                                tag="h6",
+                                font_color="#FFFFFF",
+                            )
+                        )
+                        st.markdown(*styling(""))
+                        st.markdown(
+                            *styling(
+                                f"📶 Payload SOW {site}",
                                 font_size=24,
                                 text_align="left",
                                 tag="h6",
@@ -1344,7 +1510,7 @@ class App:
                         )
                         st.markdown(
                             *styling(
-                                f"📶 Payload Sectoral {site}",
+                                f"📶 Payload Sector All System  {site}",
                                 font_size=24,
                                 text_align="left",
                                 tag="h6",
@@ -1376,8 +1542,12 @@ class App:
                     df_daily_all = self.dataframe_manager.get_dataframe(
                         f"dailyall_{site}"
                     )
-                    if df_daily_all is not None:
-                        self.chart_generator.create_daily_charts(df_daily_all, site)
+                    df_sitesow = self.dataframe_manager.get_dataframe(f"sitesow_{site}")
+
+                    df_to_use = df_sitesow if df_sitesow is not None else df_daily_all
+
+                    if df_to_use is not None:
+                        self.chart_generator.create_daily_charts(df_to_use, site)
 
             with tab3:
                 for site in selected_sites:
