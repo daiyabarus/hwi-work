@@ -1,7 +1,7 @@
 # import math
 import os
 from datetime import timedelta
-from typing import Any
+from typing import Any, List, Optional
 
 import altair as alt
 import pandas as pd
@@ -97,77 +97,142 @@ class StreamlitInterface:
 
 
 class DateCalc:
+    """A class for date-based calculations and aggregations on a DataFrame."""
+
     def __init__(
-        self, dataframe: pd.DataFrame | None = None, date_column: str | None = None
-    ):
-        """Initialize with optional dataframe and date column."""
-        self.df = dataframe
-        self.col = date_column
+        self,
+        dataframe: pd.DataFrame | None = None,
+        date_column: str | None = None,
+    ) -> None:
+        """Initialize with optional DataFrame and date column.
 
-    def set_dataframe(self, dataframe: pd.DataFrame, date_column: str):
-        """Set or update the dataframe and date column."""
-        self.df = dataframe
-        self.col = date_column
+        Args:
+            dataframe: Input DataFrame (optional)
+            date_column: Name of the date column (optional)
+        """
+        self._df: pd.DataFrame | None = None
+        self._date_col: str | None = None
+        if dataframe is not None and date_column is not None:
+            self.set_dataframe(dataframe, date_column)
 
-    def maxdate(self):
-        """Return the maximum date in the date column."""
-        if self.df is None or self.col not in self.df.columns:
+    def set_dataframe(self, dataframe: pd.DataFrame, date_column: str) -> None:
+        """Set or update the DataFrame and date column.
+
+        Args:
+            dataframe: Input DataFrame
+            date_column: Name of the date column
+
+        Raises:
+            ValueError: If date_column is not in DataFrame columns
+        """
+        if date_column not in dataframe.columns:
+            raise ValueError(f"Column '{date_column}' not found in DataFrame")
+        self._df = dataframe.copy()  # Store a copy to prevent external modifications
+        self._date_col = date_column
+
+    def _validate_state(self) -> None:
+        """Validate that DataFrame and date column are set."""
+        if self._df is None or self._date_col is None:
             raise ValueError("DataFrame or date column not set")
-        return self.df[self.col].max()
 
-    def numdays(self, days: int):
-        """Return the date that is 'days' before the maximum date."""
-        return self.maxdate() - timedelta(days=days)
+    def get_max_date(self) -> pd.Timestamp:
+        """Get the most recent date in the date column.
 
-    def get_max_date(self):
-        """Get the most recent date."""
-        return self.maxdate()
+        Returns:
+            pd.Timestamp: Maximum date
 
-    def get_date_minus(self, days: int):
-        """Get the date 'days' before the max date."""
-        return self.numdays(days)
+        Raises:
+            ValueError: If DataFrame or date column not set
+        """
+        self._validate_state()
+        return self._df[self._date_col].max()
+
+    def get_date_minus(self, days: int) -> pd.Timestamp:
+        """Get the date 'days' before the maximum date.
+
+        Args:
+            days: Number of days to subtract
+
+        Returns:
+            pd.Timestamp: Calculated date
+        """
+        return self.get_max_date() - timedelta(days=days)
 
     def calculate_avg_by_date(
-        self, date, avg_columns: list[str], keep_columns: list[str]
-    ):
-        """Calculate average for specific date with specified columns."""
-        if self.df is None or self.col not in self.df.columns:
-            raise ValueError("DataFrame or date column not set")
-        date_df = self.df[self.df[self.col] == date]
+        self, date: pd.Timestamp, avg_columns: list[str], keep_columns: list[str]
+    ) -> pd.Series:
+        """Calculate averages for a specific date.
+
+        Args:
+            date: Target date
+            avg_columns: Columns to average
+            keep_columns: Columns to retain first value
+
+        Returns:
+            pd.Series: Combined results with kept values and averages
+        """
+        self._validate_state()
+
+        # Filter once and reuse
+        date_df = self._df[self._df[self._date_col] == date]
+
         if date_df.empty:
-            return pd.Series(dict.fromkeys(keep_columns + avg_columns))
+            return pd.Series(index=keep_columns + avg_columns, dtype=float)
+
+        # Calculate averages and kept values efficiently
         avg_values = date_df[avg_columns].mean()
-        result = pd.Series({col: date_df[col].iloc[0] for col in keep_columns})
-        return pd.concat([result, avg_values])
+        kept_values = (
+            date_df[keep_columns].iloc[0]
+            if not date_df[keep_columns].empty
+            else pd.Series(index=keep_columns)
+        )
+
+        return pd.concat([kept_values, avg_values])
 
     def calculate_all_averages(
         self, avg_columns: list[str], keep_columns: list[str], num_days: int = 3
-    ):
-        """Calculate averages for max date and previous days based on num_days, plus total average."""
-        if self.df is None or self.col not in self.df.columns:
-            raise ValueError("DataFrame or date column not set")
+    ) -> pd.DataFrame:
+        """Calculate averages for multiple days plus total average.
 
-        dates = [self.get_date_minus(i) for i in range(num_days)][::-1]
+        Args:
+            avg_columns: Columns to average
+            keep_columns: Columns to retain
+            num_days: Number of days to look back (default: 3)
 
-        results = [
-            self.calculate_avg_by_date(date, avg_columns, keep_columns)
-            for date in dates
-            if date in self.df[self.col].values
-        ]
+        Returns:
+            pd.DataFrame: Results with daily and total averages
+        """
+        self._validate_state()
 
-        if not results:
+        # Get unique dates efficiently
+        unique_dates = self._df[self._date_col].unique()
+        max_date = self.get_max_date()
+        target_dates = [max_date - timedelta(days=i) for i in range(num_days)][::-1]
+        valid_dates = [d for d in target_dates if d in unique_dates]
+
+        if not valid_dates:
             return pd.DataFrame(
-                columns=keep_columns + [f"Average {col}" for col in avg_columns]
+                columns=keep_columns + [f"Avg {col}" for col in avg_columns]
             )
 
+        # Calculate averages for valid dates
+        results = [
+            self.calculate_avg_by_date(date, avg_columns, keep_columns)
+            for date in valid_dates
+        ]
         result_df = pd.DataFrame(results)
 
+        # Calculate total average
         total_avg = pd.Series(
-            {col: "" if col == self.col else "Average" for col in keep_columns}
+            index=keep_columns,
+            data=["" if col == self._date_col else "Average" for col in keep_columns],
         )
         total_avg = pd.concat([total_avg, result_df[avg_columns].mean()])
+
+        # Combine results
         final_df = pd.concat([result_df, pd.DataFrame([total_avg])], ignore_index=True)
         final_df.columns = keep_columns + [f"Avg {col}" for col in avg_columns]
+
         return final_df
 
 
@@ -269,6 +334,70 @@ class QueryManager:
             "end_date": end_date,
         }
         return _self._fetch_data(query, params)
+
+    @st.cache_data(ttl=600)
+    def get_gsmdaily(
+        _self, siteid: str, start_date: str, end_date: str
+    ) -> pd.DataFrame:
+        """Fetch GSM daily data"""
+        query = text("""
+            SELECT
+            "date",
+            "siteid",
+            "cellname",
+            "TCH Traffic",
+            "SDCCH Traffic",
+            "GPRS Payload (Mbyte)",
+            "EDGE Payload (Mbyte)"
+            FROM gsmdaily
+            WHERE "siteid" LIKE :siteid
+            AND "date" BETWEEN :start_date AND :end_date
+        """)
+        params = {
+            "siteid": f"%{siteid}%",
+            "start_date": start_date,
+            "end_date": end_date,
+        }
+        return _self._fetch_data(query, params)
+
+    @st.cache_data(ttl=600)
+    def get_gsmdaily_cluster(
+        _self,
+        siteid: list[str] | str,
+        start_date: str,
+        end_date: str,
+    ) -> pd.DataFrame:
+        """Fetch GSM daily data cluster.
+
+        Args:
+            _self: Instance of the class (assuming this is a method)
+            siteid: Single site ID string or list of site IDs
+            start_date: Start date in string format
+            end_date: End date in string format
+
+        Returns:
+            pd.DataFrame: DataFrame containing GSM daily data
+        """
+        params = {
+            "start_date": start_date,
+            "end_date": end_date,
+        }
+
+        query_parts = [
+            "SELECT * FROM gsmdaily",
+            'WHERE "date" BETWEEN :start_date AND :end_date',
+        ]
+
+        if isinstance(siteid, str):
+            query_parts.append('AND "siteid" LIKE :siteid')
+            params["siteid"] = f"%{siteid}%"
+        else:
+            placeholders = ", ".join(f":siteid_{i}" for i in range(len(siteid)))
+            query_parts.append(f'AND "siteid" IN ({placeholders})')
+            params.update({f"siteid_{i}": s for i, s in enumerate(siteid)})
+
+        final_query = " ".join(query_parts)
+        return _self._fetch_data(text(final_query), params)
 
     @st.cache_data(ttl=600)
     def get_ltehourly_data(_self, siteids: list[str]) -> pd.DataFrame:
@@ -501,6 +630,30 @@ class ChartGenerator:
             "ta_average",
         ]
 
+        custom_headers = {
+            "rrc_setup_sr_service": "RRC Setup Success Rate",
+            "erab_setup_sr_all": "ERAB Setup Success Rate",
+            "call_setup_sr": "Call Setup Success Rate",
+            "service_drop_rate": "Service Drop Rate",
+            "intrafreq_ho_out_sr": "Intra-Frequency Handover Success Rate",
+            "inter_frequency_handover_sr": "Inter-Frequency Handover Success Rate",
+            "lte_to_geran_redirection_sr": "LTE to GERAN Redirection Success Rate",
+            "csfb_execution_sr": "CSFB Execution Success Rate",
+            "csfb_preparation_sr": "CSFB Preparation Success Rate",
+            "uplink_interference": "Uplink Interference",
+            "radio_network_availability_rate": "Radio Network Availability",
+            "cqi": "Channel Quality Indicator (CQI)",
+            "se": "Spectral Efficiency (SE)",
+            "total_traffic_volume_gb": "Total Traffic Volume (GB)",
+            "total_user": "Total Users",
+            "cell_dl_avg_throughput_mbps": "Cell DL Avg Throughput (Mbps)",
+            "cell_ul_avg_throughput_mbps": "Cell UL Avg Throughput (Mbps)",
+            "user_dl_avg_throughput_mbps": "User DL Avg Throughput (Mbps)",
+            "user_ul_avg_throughput_mbps": "User UL Avg Throughput (Mbps)",
+            "active_user": "Active Users",
+            "ta_average": "Timing Advance Average",
+        }
+
         df["date"] = pd.to_datetime(df["date"])
 
         if "siteid" in df.columns and "sector" in df.columns:
@@ -532,7 +685,11 @@ class ChartGenerator:
                         .mark_line()
                         .encode(
                             x=alt.X("date:T", title=""),
-                            y=alt.Y(f"{param}:Q", title=""),
+                            y=alt.Y(
+                                f"{param}:Q",
+                                title="",
+                                scale=alt.Scale(zero=False),
+                            ),
                             color=alt.Color(
                                 "cellsector:N",
                                 scale=alt.Scale(
@@ -558,8 +715,10 @@ class ChartGenerator:
                             ],
                         )
                         .properties(
-                            title=f"{param.replace('_', ' ').title().upper()}",
-                            height=350,
+                            title=custom_headers.get(
+                                param, param.replace("_", " ").title().upper()
+                            ),
+                            height=400,
                             width="container",
                         )
                         .interactive()
@@ -672,7 +831,7 @@ class ChartGenerator:
 
                         st.plotly_chart(fig, use_container_width=True)
 
-    def create_charts_for_stacked_area_neid(self, df, neid, x_param, y_param):
+    def create_charts_for_stacked_area_neid(self, df, neid, x_param, y_param, key=None):
         df[y_param] = df[y_param].astype(float)
         df_agg = df.groupby([x_param, neid], as_index=False)[y_param].sum()
 
@@ -749,7 +908,7 @@ class ChartGenerator:
                     showlegend=True,
                 )
 
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, use_container_width=True, key=key)
 
     def create_charts_timingadvance(self, df, sector):
         all_plot_columns = [
@@ -884,6 +1043,168 @@ class ChartGenerator:
 
                     st.plotly_chart(fig, use_container_width=True)
 
+    def create_charts_stacked(self, df, neid, x_param, y_param, key=None):
+        df[y_param] = df[y_param].astype(float)
+        df_agg = df.groupby([x_param, neid], as_index=False)[y_param].sum()
+        df_agg = df_agg.sort_values(by=x_param)
+
+        color_mapping = {
+            cell: color
+            for cell, color in zip(
+                df_agg[neid].unique(),
+                self.get_colors(len(df_agg[neid].unique())),
+            )
+        }
+
+        container = st.container(border=True)
+        with container:
+            chart = (
+                alt.Chart(df_agg)
+                .mark_area()
+                .encode(
+                    x=alt.X(
+                        f"{x_param}:T",
+                        title=None,
+                        axis=alt.Axis(
+                            format="%Y-%m-%d",  # Show year, month, and day
+                            labelAngle=45,  # Rotate labels for better readability
+                            labelFontSize=14,
+                            labelColor="#000000",
+                        ),
+                    ),
+                    y=alt.Y(
+                        f"{y_param}:Q",
+                        title=None,
+                        stack=True,
+                    ),
+                    color=alt.Color(
+                        f"{neid}:N",
+                        scale=alt.Scale(
+                            domain=list(color_mapping.keys()),
+                            range=list(color_mapping.values()),
+                        ),
+                        legend=alt.Legend(
+                            title=None,
+                            orient="bottom",
+                            columns=4,
+                            direction="horizontal",
+                            columnPadding=10,
+                            symbolLimit=0,
+                            labelLimit=0,
+                            labelFontSize=14,
+                            labelColor="black",
+                        ),
+                    ),
+                    tooltip=[
+                        alt.Tooltip(f"{neid}:N", title=neid),
+                        alt.Tooltip(f"{y_param}:Q", title=y_param),
+                        alt.Tooltip(f"{x_param}:T", title=x_param, format="%Y-%m-%d"),
+                    ],
+                )
+                .properties(
+                    width=600,
+                    height=350,
+                )
+                .configure_view(
+                    strokeWidth=0,
+                    fill="#F5F5F5",
+                )
+                .configure_axis(
+                    labelFontSize=14,
+                    labelColor="#000000",
+                    grid=False,
+                )
+                .configure_legend(
+                    labelFont="Plus Jakarta Sans Light",
+                    labelFontSize=16,
+                    padding=10,
+                )
+                .interactive()
+            )
+
+            st.altair_chart(chart, use_container_width=True, key=key)
+
+    def create_charts_line(self, df, neid, x_param, y_param, key=None):
+        df[y_param] = df[y_param].astype(float)
+        df_agg = df.groupby([x_param, neid], as_index=False)[y_param].sum()
+        df_agg = df_agg.sort_values(by=x_param)
+
+        color_mapping = {
+            cell: color
+            for cell, color in zip(
+                df_agg[neid].unique(),
+                self.get_colors(len(df_agg[neid].unique())),
+            )
+        }
+
+        container = st.container(border=True)
+        with container:
+            chart = (
+                alt.Chart(df_agg)
+                .mark_line()  # Changed from mark_area to mark_line for line chart
+                .encode(
+                    x=alt.X(
+                        f"{x_param}:T",
+                        title=None,
+                        axis=alt.Axis(
+                            format="%Y-%m-%d",  # Show year, month, and day
+                            labelAngle=45,  # Rotate labels for better readability
+                            labelFontSize=14,
+                            labelColor="#000000",
+                        ),
+                    ),
+                    y=alt.Y(
+                        f"{y_param}:Q",
+                        title=None,
+                        stack=None,  # Remove stacking for line chart
+                    ),
+                    color=alt.Color(
+                        f"{neid}:N",
+                        scale=alt.Scale(
+                            domain=list(color_mapping.keys()),
+                            range=list(color_mapping.values()),
+                        ),
+                        legend=alt.Legend(
+                            title=None,
+                            orient="bottom",
+                            columns=4,
+                            direction="horizontal",
+                            columnPadding=10,
+                            symbolLimit=0,
+                            labelLimit=0,
+                            labelFontSize=14,
+                            labelColor="black",
+                        ),
+                    ),
+                    tooltip=[
+                        alt.Tooltip(f"{neid}:N", title=neid),
+                        alt.Tooltip(f"{y_param}:Q", title=y_param),
+                        alt.Tooltip(f"{x_param}:T", title=x_param, format="%Y-%m-%d"),
+                    ],
+                )
+                .properties(
+                    width=600,
+                    height=350,
+                )
+                .configure_view(
+                    strokeWidth=0,
+                    fill="#F5F5F5",
+                )
+                .configure_axis(
+                    labelFontSize=14,
+                    labelColor="#000000",
+                    grid=False,
+                )
+                .configure_legend(
+                    labelFont="Plus Jakarta Sans Light",
+                    labelFontSize=16,
+                    padding=10,
+                )
+                .interactive()
+            )
+
+            st.altair_chart(chart, use_container_width=True, key=key)
+
 
 class App:
     def __init__(self):
@@ -999,11 +1320,25 @@ class App:
                             self.dataframe_manager.add_dataframe(
                                 f"tastate_{site}", df_tastate
                             )
+                            df_gsm = self.query_manager.get_gsmdaily(
+                                site, start_date_str, end_date_str
+                            )
+                            self.dataframe_manager.add_dataframe(
+                                f"gsmdaily_{site}", df_gsm
+                            )
+                            df_gsm_cluster = self.query_manager.get_gsmdaily_cluster(
+                                site, start_date_str, end_date_str
+                            )
+                            self.dataframe_manager.add_dataframe(
+                                f"gsmdaily_cluster_{site}", df_gsm_cluster
+                            )
 
         if any(
             key.startswith("dailysow_") for key in self.dataframe_manager.dataframes
         ):
-            tab1, tab2, tab3, tab4 = st.tabs(["Sow Level", "Site Level", "GSM", "TA"])
+            tab1, tab2, tab3, tab4 = st.tabs(
+                ["SOW SITE", "COLO & ClUSTER", "Payload COLLO & ClUSTER", "TA"]
+            )
 
             with tab1:
                 for site in selected_sites:
@@ -1290,8 +1625,6 @@ class App:
                             xrule=False,
                             yline="98.0",
                         )
-                        # st.markdown(*styling(""))
-                        # st.markdown(*styling(""))
                         st.markdown(
                             *styling(
                                 f"📶 Inter HO {site}",
@@ -1308,12 +1641,8 @@ class App:
                             xrule=False,
                             yline="98.0",
                         )
-                        # st.markdown(*styling(""))
-                        # st.markdown(*styling(""))
-                        # st.markdown(*styling(""))
                         sac.divider(
                             label="PAGE 2",
-                            # icon="graph-up",
                             align="center",
                             size="xl",
                             color="#DC0013",
@@ -1334,13 +1663,6 @@ class App:
                             xrule=False,
                             yline="99.9",
                         )
-                        # sac.divider(
-                        #     label="PAGE 2",
-                        #     # icon="graph-up",
-                        #     align="center",
-                        #     size="xl",
-                        #     color="#DC0013",
-                        # )
                         st.markdown(
                             *styling(
                                 f"📶 RSSI {site}",
@@ -1371,7 +1693,6 @@ class App:
                             "date",
                             "radio_network_availability_rate",
                             xrule=False,
-                            # yline="1.4",
                         )
                         st.markdown(
                             *styling(
@@ -1407,7 +1728,6 @@ class App:
                         )
                         sac.divider(
                             label="PAGE 3",
-                            # icon="graph-up",
                             align="center",
                             size="xl",
                             color="#DC0013",
@@ -1426,7 +1746,6 @@ class App:
                             "date",
                             "user_dl_avg_throughput_mbps",
                             xrule=False,
-                            # yline="1.4",
                         )
                         st.markdown(
                             *styling(
@@ -1442,7 +1761,6 @@ class App:
                             "date",
                             "cell_dl_avg_throughput_mbps",
                             xrule=False,
-                            # yline="1.4",
                         )
                         st.markdown(
                             *styling(
@@ -1459,14 +1777,6 @@ class App:
                             "active_user",
                             xrule=False,
                         )
-                        # st.markdown(*styling(""))
-                        # st.markdown(*styling(""))
-                        # sac.divider(
-                        #     label="PAGE 3",
-                        #     align="center",
-                        #     size="xl",
-                        #     color="#DC0013",
-                        # )
                         st.markdown(
                             *styling(
                                 f"📶 PRB Utilization {site}",
@@ -1535,6 +1845,7 @@ class App:
                             neid="neid",
                             x_param="date",
                             y_param="total_traffic_volume_gb",
+                            key=f"stacked_area_neid_tab1_{site}",  # Unique key added
                         )
 
             with tab2:
@@ -1551,9 +1862,209 @@ class App:
 
             with tab3:
                 for site in selected_sites:
-                    self.dataframe_manager.display_dataframe(
-                        f"hourly_{site}", f"LTE Hourly Data - {site}"
+                    lte_cosite = self.dataframe_manager.get_dataframe(
+                        f"dailyall_{site}"
                     )
+                    gsm_cosite = self.dataframe_manager.get_dataframe(
+                        f"gsmdaily_{site}"
+                    )
+
+                    lte_cluster = (
+                        self.dataframe_manager.get_dataframe(f"nbr_{site}")
+                        if selected_nbr
+                        else self.dataframe_manager.get_dataframe(f"dailyall_{site}")
+                    )
+                    gsm_cluster = (
+                        self.dataframe_manager.get_dataframe(f"gsmdaily_cluster_{site}")
+                        if selected_nbr
+                        else self.dataframe_manager.get_dataframe(f"gsmdaily_{site}")
+                    )
+                    st.write(gsm_cluster)
+                    st.write(lte_cluster)
+                    if (
+                        selected_nbr
+                        and "Run Query" in st.session_state
+                        and st.session_state["Run Query"]
+                    ):
+                        start_date, end_date = date_range
+                        start_date_str = start_date.strftime("%Y-%m-%d")
+                        end_date_str = end_date.strftime("%Y-%m-%d")
+                        df_nbr = self.query_manager.get_nbr_data(
+                            selected_nbr,
+                            start_date_str,
+                            end_date_str,
+                        )
+                        df_gsm_cluster = self.query_manager.get_gsmdaily_cluster(
+                            selected_nbr,
+                            start_date_str,
+                            end_date_str,
+                        )
+                        self.dataframe_manager.add_dataframe(f"nbr_{site}", df_nbr)
+                        self.dataframe_manager.add_dataframe(
+                            f"gsmdaily_cluster_{site}", df_gsm_cluster
+                        )
+
+                    # if lte_cluster is None:
+                    #     cols = st.columns(1)
+                    #     col1 = cols[0]
+                    #     col2 = None
+                    # else:
+                    #     cols = st.columns(2)
+                    #     col1, col2 = cols
+                    col1 = st.columns(1)
+                    # with col1:
+                    st.markdown(
+                        *styling(
+                            f"📶 Payload (Mb) LTE Co-Site {site}",
+                            font_size=24,
+                            text_align="left",
+                            tag="h6",
+                        )
+                    )
+                    self.chart_generator.create_charts_stacked(
+                        df=lte_cosite,
+                        neid="neid",
+                        x_param="date",
+                        y_param="total_traffic_volume_gb",
+                        key=f"stacked_area_neid_cosite_{site}",
+                    )
+                    st.markdown(
+                        *styling(
+                            f"📶 TCH Traffic 2G Co-Site {site}",
+                            font_size=24,
+                            text_align="left",
+                            tag="h6",
+                        )
+                    )
+                    self.chart_generator.create_charts_line(
+                        df=df_gsm,
+                        neid="cellname",
+                        x_param="date",
+                        y_param="TCH Traffic",
+                        key=f"stacked_area_neid_cosite_{site}",
+                    )
+                    st.markdown(
+                        *styling(
+                            f"📶 SDCCH Traffic 2G Co-Site {site}",
+                            font_size=24,
+                            text_align="left",
+                            tag="h6",
+                        )
+                    )
+                    self.chart_generator.create_charts_line(
+                        df=df_gsm,
+                        neid="cellname",
+                        x_param="date",
+                        y_param="SDCCH Traffic",
+                        key=f"stacked_area_neid_cosite_{site}",
+                    )
+                    st.markdown(
+                        *styling(
+                            f"📶 GPRS Payload (Mbyte) 2G Co-Site {site}",
+                            font_size=24,
+                            text_align="left",
+                            tag="h6",
+                        )
+                    )
+                    self.chart_generator.create_charts_stacked(
+                        df=df_gsm,
+                        neid="cellname",
+                        x_param="date",
+                        y_param="GPRS Payload (Mbyte)",
+                        key=f"stacked_area_neid_cosite_{site}",
+                    )
+                    st.markdown(
+                        *styling(
+                            f"📶 EDGE Payload (Mbyte) 2G Co-Site {site}",
+                            font_size=24,
+                            text_align="left",
+                            tag="h6",
+                        )
+                    )
+                    self.chart_generator.create_charts_stacked(
+                        df=df_gsm,
+                        neid="cellname",
+                        x_param="date",
+                        y_param="EDGE Payload (Mbyte)",
+                        key=f"stacked_area_neid_cosite_{site}",
+                    )
+                    # if col2:
+                    #     with col2:
+                    #         st.markdown(
+                    #             *styling(
+                    #                 f"📶 Payload (Mb) LTE Cluster {site}",
+                    #                 font_size=24,
+                    #                 text_align="left",
+                    #                 tag="h6",
+                    #             )
+                    #         )
+                    #         self.chart_generator.create_charts_stacked(
+                    #             df=lte_cluster,
+                    #             neid="siteid",
+                    #             x_param="date",
+                    #             y_param="total_traffic_volume_gb",
+                    #             key=f"stacked_area_neid_cluster_{site}",
+                    #         )
+                    #         st.markdown(
+                    #             *styling(
+                    #                 f"📶 TCH Traffic 2G Cluster {site}",
+                    #                 font_size=24,
+                    #                 text_align="left",
+                    #                 tag="h6",
+                    #             )
+                    #         )
+                    #         self.chart_generator.create_charts_line(
+                    #             df=gsm_cluster,
+                    #             neid="siteid",
+                    #             x_param="date",
+                    #             y_param="TCH Traffic",
+                    #             key=f"gsm_cluster_tch_{site}",
+                    #         )
+                    #         st.markdown(
+                    #             *styling(
+                    #                 f"📶 SDCCH Traffic 2G Cluster {site}",
+                    #                 font_size=24,
+                    #                 text_align="left",
+                    #                 tag="h6",
+                    #             )
+                    #         )
+                    #         self.chart_generator.create_charts_line(
+                    #             df=gsm_cluster,
+                    #             neid="siteid",
+                    #             x_param="date",
+                    #             y_param="SDCCH Traffic",
+                    #             key=f"gsm_cluster_sdcch_{site}",
+                    #         )
+                    #         st.markdown(
+                    #             *styling(
+                    #                 f"📶 GPRS Payload (Mbyte) 2G Cluster {site}",
+                    #                 font_size=24,
+                    #                 text_align="left",
+                    #                 tag="h6",
+                    #             )
+                    #         )
+                    #         self.chart_generator.create_charts_stacked(
+                    #             df=gsm_cluster,
+                    #             neid="siteid",
+                    #             x_param="date",
+                    #             y_param="GPRS Payload (Mbyte)",
+                    #             key=f"gsm_cluster_gprs_{site}",
+                    #         )
+                    #         st.markdown(
+                    #             *styling(
+                    #                 f"📶 EDGE Payload (Mbyte) 2G Cluster {site}",
+                    #                 font_size=24,
+                    #                 text_align="left",
+                    #                 tag="h6",
+                    #             )
+                    #         )
+                    #         self.chart_generator.create_charts_stacked(
+                    #             df=gsm_cluster,
+                    #             neid="siteid",
+                    #             x_param="date",
+                    #             y_param="EDGE Payload (Mbyte)",
+                    #             key=f"gsm_cluster_edge_{site}",
+                    #         )
 
             with tab4:
                 for site in selected_sites:
@@ -1594,7 +2105,6 @@ class App:
                             )
                         html_table += "</tbody></table>"
 
-                        # Apply custom CSS styling and render
                         st.markdown(
                             """
                             <style>

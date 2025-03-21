@@ -58,16 +58,13 @@ class ColorPalette:
 
     @classmethod
     def get_color(cls, index: int) -> str:
-        # Ensure the color list is long enough for selection
         extended_colors = cls.color_codes * ((index // len(cls.color_codes)) + 1)
         selected_color = extended_colors[index]
 
-        # Check if the selected color is in the last 5 used colors
         while selected_color in cls.last_colors:
             index += 1
             selected_color = extended_colors[index % len(cls.color_codes)]
 
-        # Update the last colors list
         cls.last_colors.append(selected_color)
         if len(cls.last_colors) > 1:
             cls.last_colors.pop(0)
