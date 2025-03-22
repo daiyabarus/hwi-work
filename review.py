@@ -684,7 +684,15 @@ class ChartGenerator:
                         alt.Chart(df)
                         .mark_line()
                         .encode(
-                            x=alt.X("date:T", title=""),
+                            x=alt.X(
+                                "date:T",
+                                title=None,
+                                axis=alt.Axis(
+                                    format="%Y-%m-%d",
+                                    labelFontSize=12,
+                                    labelColor="#000000",
+                                ),
+                            ),
                             y=alt.Y(
                                 f"{param}:Q",
                                 title="",
@@ -1067,7 +1075,7 @@ class ChartGenerator:
                         title=None,
                         axis=alt.Axis(
                             format="%Y-%m-%d",  # Show year, month, and day
-                            labelAngle=45,  # Rotate labels for better readability
+                            # labelAngle=45,  # Rotate labels for better readability
                             labelFontSize=14,
                             labelColor="#000000",
                         ),
@@ -1141,14 +1149,13 @@ class ChartGenerator:
         with container:
             chart = (
                 alt.Chart(df_agg)
-                .mark_line()  # Changed from mark_area to mark_line for line chart
+                .mark_line()
                 .encode(
                     x=alt.X(
                         f"{x_param}:T",
                         title=None,
                         axis=alt.Axis(
-                            format="%Y-%m-%d",  # Show year, month, and day
-                            labelAngle=45,  # Rotate labels for better readability
+                            format="%Y-%m-%d",
                             labelFontSize=14,
                             labelColor="#000000",
                         ),
