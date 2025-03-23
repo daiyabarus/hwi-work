@@ -341,14 +341,7 @@ class QueryManager:
     ) -> pd.DataFrame:
         """Fetch GSM daily data"""
         query = text("""
-            SELECT
-            "date",
-            "siteid",
-            "cellname",
-            "TCH Traffic",
-            "SDCCH Traffic",
-            "GPRS Payload (Mbyte)",
-            "EDGE Payload (Mbyte)"
+            SELECT *
             FROM gsmdaily
             WHERE "siteid" LIKE :siteid
             AND "date" BETWEEN :start_date AND :end_date
@@ -361,23 +354,26 @@ class QueryManager:
         return _self._fetch_data(query, params)
 
     @st.cache_data(ttl=600)
-    def get_gsmdaily_cluster(
+    def get_gsm_nbr_data(
         _self,
         siteid: list[str] | str,
         start_date: str,
         end_date: str,
     ) -> pd.DataFrame:
-        """Fetch GSM daily data cluster.
+        """Fetch GSM daily data cluster only if siteid is provided and not empty.
 
         Args:
-            _self: Instance of the class (assuming this is a method)
+            _self: Instance of the class
             siteid: Single site ID string or list of site IDs
             start_date: Start date in string format
             end_date: End date in string format
 
         Returns:
-            pd.DataFrame: DataFrame containing GSM daily data
+            pd.DataFrame: DataFrame containing GSM daily data, empty if no siteid
         """
+        if not siteid:  # Check if siteid is empty or None
+            return pd.DataFrame()
+
         params = {
             "start_date": start_date,
             "end_date": end_date,
@@ -605,6 +601,110 @@ class ChartGenerator:
 
                         st.plotly_chart(fig, use_container_width=True)
 
+    def create_gsm_daily_charts(self, df, site):
+        parameters = [
+            "CSSR(%)",
+            "TCH Drop Rate",
+            "hosr",
+            "SDCCH Setup Success Rate (SDSR)",
+            "TBF Comp SR",
+            "TBF DL Est SR",
+            "SDCCH Traffic",
+            "TCH Traffic",
+            "GPRS Payload (Mbyte)",
+            "EDGE Payload (Mbyte)",
+        ]
+
+        custom_headers = {
+            "CSSR(%)": "CSSR %",
+            "TCH Drop Rate": "TDR",
+            "hosr": "HOSR",
+            "SDCCH Setup Success Rate (SDSR)": "SDSR",
+            "TBF Comp SR": "TBF Comp SR",
+            "TBF DL Est SR": "TBF DL Est SR",
+            "SDCCH Traffic": "SDCCH Traffic",
+            "TCH Traffic": "TCH Traffice",
+            "GPRS Payload (Mbyte)": "GPRS Payload (Mbyte)",
+            "EDGE Payload (Mbyte)": "EDGE Payload (Mbyte)",
+        }
+
+        df["date"] = pd.to_datetime(df["date"])
+
+        if "cellname" in df.columns:
+            df["cellsector"] = df["siteid"] + "_" + df["cellname"].str[-4:]
+        else:
+            st.warning(
+                "Kolom 'cellname' tidak ditemukan. Menggunakan 'cell_name' sebagai fallback."
+            )
+            df["cellsector"] = df["siteid"]
+
+        unique_cells = df["cellsector"].unique()
+        colors = self.get_colors(len(unique_cells))
+        color_mapping = dict(zip(unique_cells, colors))
+
+        for i in range(0, len(parameters), 2):
+            cols = st.columns(2, gap="small")
+            containers = [
+                cols[0].container(border=True),
+                cols[1].container(border=True),
+            ]
+
+            for j, param in enumerate(parameters[i : i + 2]):
+                with containers[j]:
+                    chart = (
+                        alt.Chart(df)
+                        .mark_line()
+                        .encode(
+                            x=alt.X(
+                                "date:T",
+                                title=None,
+                                axis=alt.Axis(
+                                    format="%Y-%m-%d",
+                                    labelFontSize=12,
+                                    labelColor="#000000",
+                                ),
+                            ),
+                            y=alt.Y(
+                                f"{param}:Q",
+                                title="",
+                                scale=alt.Scale(zero=False),
+                            ),
+                            color=alt.Color(
+                                "cellsector:N",
+                                scale=alt.Scale(
+                                    domain=list(color_mapping.keys()),
+                                    range=list(color_mapping.values()),
+                                ),
+                                legend=alt.Legend(
+                                    title=None,
+                                    orient="bottom",
+                                    columns=3,
+                                    direction="horizontal",
+                                    columnPadding=-8,
+                                    symbolLimit=0,
+                                    labelLimit=0,
+                                    labelFontSize=12,
+                                    labelColor="black",
+                                ),
+                            ),
+                            tooltip=[
+                                "cellsector",
+                                "date",
+                                param,
+                            ],
+                        )
+                        .properties(
+                            title=custom_headers.get(
+                                param, param.replace("_", " ").title().upper()
+                            ),
+                            height=400,
+                            width="container",
+                        )
+                        .interactive()
+                    )
+
+                    st.altair_chart(chart, use_container_width=True)
+
     def create_daily_charts(self, df, site):
         parameters = [
             "rrc_setup_sr_service",
@@ -707,9 +807,9 @@ class ChartGenerator:
                                 legend=alt.Legend(
                                     title=None,
                                     orient="bottom",
-                                    columns=5,
+                                    columns=4,
                                     direction="horizontal",
-                                    columnPadding=-4,
+                                    columnPadding=-8,
                                     symbolLimit=0,
                                     labelLimit=0,
                                     labelFontSize=12,
@@ -1074,8 +1174,7 @@ class ChartGenerator:
                         f"{x_param}:T",
                         title=None,
                         axis=alt.Axis(
-                            format="%Y-%m-%d",  # Show year, month, and day
-                            # labelAngle=45,  # Rotate labels for better readability
+                            format="%Y-%m-%d",
                             labelFontSize=14,
                             labelColor="#000000",
                         ),
@@ -1223,6 +1322,59 @@ class App:
         self.streamlit_interface = StreamlitInterface()
         self.chart_generator = ChartGenerator()
 
+    def _display_table(self, df):
+        """Helper function to display a dataframe as an HTML table."""
+        html_table = "<table class='custom-table'>"
+        html_table += (
+            "<thead><tr>"
+            + "".join(f"<th>{col}</th>" for col in df.columns)
+            + "</tr></thead>"
+        )
+        html_table += "<tbody>"
+        for row in df.itertuples(index=False):
+            html_table += "<tr>" + "".join(f"<td>{val}</td>" for val in row) + "</tr>"
+        html_table += "</tbody></table>"
+
+        st.markdown(
+            """
+            <style>
+            .custom-table {
+                font-size: 10px !important;
+                font-family: Arial, sans-serif !important;
+                border-collapse: collapse !important;
+                text-align: center !important;
+                width: 100% !important;
+            }
+            .custom-table th {
+                background-color: #F5F5F5 !important;
+                border: 1px solid #ddd !important;
+                padding: 2px !important;
+                text-align: center !important;
+                vertical-align: top !important;
+                height: 20px !important;
+            }
+            .custom-table td {
+                border: 1px solid #ddd !important;
+                padding: 2px !important;
+                vertical-align: top !important;
+                text-align: center !important;
+                height: 20px !important;
+            }
+            .custom-table tr {
+                height: 20px !important;
+            }
+            .custom-table tr:nth-child(even) {
+                background-color: #f9f9f9 !important;
+            }
+            .custom-table tr:hover {
+                background-color: #f5f5f5 !important;
+            }
+            </style>
+            """
+            + html_table,
+            unsafe_allow_html=True,
+        )
+
     def run(self):
         session, engine = self.database_session.create_session()
         if session is None:
@@ -1254,6 +1406,7 @@ class App:
                     end_date_str = end_date.strftime("%Y-%m-%d")
 
                     with st.spinner("Fetching data..."):
+                        # Fetch data for selected_sites
                         for site in selected_sites:
                             if selected_band:
                                 df_daily = self.query_manager.get_ltedaily_data(
@@ -1307,12 +1460,21 @@ class App:
                                     f"sitesow_{site}", df_daily_all_copy
                                 )
 
+                            # Fetch LTE and GSM neighbor data consistently
                             df_nbr = self.query_manager.get_nbr_data(
                                 selected_nbr if selected_nbr else [site],
                                 start_date_str,
                                 end_date_str,
                             )
+                            df_gsm_nbr = self.query_manager.get_gsm_nbr_data(
+                                selected_nbr if selected_nbr else [site],
+                                start_date_str,
+                                end_date_str,
+                            )
                             self.dataframe_manager.add_dataframe(f"nbr_{site}", df_nbr)
+                            self.dataframe_manager.add_dataframe(
+                                f"gsm_nbr_{site}", df_gsm_nbr
+                            )
 
                             df_hourly = self.query_manager.get_ltehourly_data(
                                 selected_sites
@@ -1321,30 +1483,37 @@ class App:
                                 f"hourly_{site}", df_hourly
                             )
 
-                            df_tastate = self.query_manager.get_ltetastate_data(
-                                selected_sites
-                            )
+                            # Fetch LTE TA state for selected_sites
+                            df_tastate = self.query_manager.get_ltetastate_data([site])
                             self.dataframe_manager.add_dataframe(
                                 f"tastate_{site}", df_tastate
                             )
+
+                            # Fetch GSM daily data for selected_sites
                             df_gsm = self.query_manager.get_gsmdaily(
                                 site, start_date_str, end_date_str
                             )
                             self.dataframe_manager.add_dataframe(
                                 f"gsmdaily_{site}", df_gsm
                             )
-                            df_gsm_cluster = self.query_manager.get_gsmdaily_cluster(
-                                site, start_date_str, end_date_str
+
+                        # Fetch GSM and LTE data for selected_nbr (only if selected_nbr exists)
+                        if selected_nbr:
+                            df_nbr_lte = self.query_manager.get_nbr_data(
+                                selected_nbr, start_date_str, end_date_str
                             )
-                            self.dataframe_manager.add_dataframe(
-                                f"gsmdaily_cluster_{site}", df_gsm_cluster
+                            self.dataframe_manager.add_dataframe("lte_nbr", df_nbr_lte)
+
+                            df_nbr_gsm = self.query_manager.get_gsm_nbr_data(
+                                selected_nbr, start_date_str, end_date_str
                             )
+                            self.dataframe_manager.add_dataframe("gsm_nbr", df_nbr_gsm)
 
         if any(
             key.startswith("dailysow_") for key in self.dataframe_manager.dataframes
         ):
             tab1, tab2, tab3, tab4 = st.tabs(
-                ["SOW SITE", "COLO & ClUSTER", "Payload COLLO & ClUSTER", "TA"]
+                ["SOW SITE", "COLO & ClUSTER", "PAYLOAD COLLO & ClUSTER", "TA"]
             )
 
             with tab1:
@@ -1541,7 +1710,7 @@ class App:
                     st.markdown(*styling(""))
                     st.markdown(
                         *styling(
-                            f"KPI Trend Chart (1 Week) - {site}",
+                            f"KPI Trend Chart - {site}",
                             font_size=28,
                             text_align="Center",
                             background_color="#DC0013",
@@ -1554,7 +1723,7 @@ class App:
                     if df_daily_sow is not None:
                         st.markdown(
                             *styling(
-                                f"📶 RRC SR {site}",
+                                "📶 RRC SR",
                                 font_size=24,
                                 text_align="left",
                                 tag="h6",
@@ -1570,290 +1739,292 @@ class App:
                         )
                         st.markdown(
                             *styling(
-                                f"📶 CSSR {site}",
+                                "📶 CSSR",
                                 font_size=24,
                                 text_align="left",
                                 tag="h6",
                             )
                         )
-                        self.chart_generator.create_charts_for_daily(
-                            df_daily_sow,
-                            "cell_name",
-                            "date",
-                            "call_setup_sr",
-                            xrule=False,
-                            yline="99.3",
+                    self.chart_generator.create_charts_for_daily(
+                        df_daily_sow,
+                        "cell_name",
+                        "date",
+                        "call_setup_sr",
+                        xrule=False,
+                        yline="99.3",
+                    )
+                    st.markdown(
+                        *styling(
+                            "📶 ERAB SR",
+                            font_size=24,
+                            text_align="left",
+                            tag="h6",
                         )
-                        st.markdown(
-                            *styling(
-                                f"📶 ERAB SR {site}",
-                                font_size=24,
-                                text_align="left",
-                                tag="h6",
-                            )
+                    )
+                    self.chart_generator.create_charts_for_daily(
+                        df_daily_sow,
+                        "cell_name",
+                        "date",
+                        "erab_setup_sr_all",
+                        xrule=False,
+                        yline="99.7",
+                    )
+                    st.markdown(
+                        *styling(
+                            "📶 SAR",
+                            font_size=24,
+                            text_align="left",
+                            tag="h6",
                         )
-                        self.chart_generator.create_charts_for_daily(
-                            df_daily_sow,
-                            "cell_name",
-                            "date",
-                            "erab_setup_sr_all",
-                            xrule=False,
-                            yline="99.7",
+                    )
+                    self.chart_generator.create_charts_for_daily(
+                        df_daily_sow,
+                        "cell_name",
+                        "date",
+                        "service_drop_rate",
+                        xrule=False,
+                        yline="0.10",
+                    )
+                    sac.divider(
+                        label="PAGE 2",
+                        align="center",
+                        size="xl",
+                        color="#DC0013",
+                    )
+                    st.markdown(
+                        *styling(
+                            "📶 Intra HO",
+                            font_size=24,
+                            text_align="left",
+                            tag="h6",
                         )
-                        st.markdown(
-                            *styling(
-                                f"📶 SAR {site}",
-                                font_size=24,
-                                text_align="left",
-                                tag="h6",
-                            )
+                    )
+                    self.chart_generator.create_charts_for_daily(
+                        df_daily_sow,
+                        "cell_name",
+                        "date",
+                        "intrafreq_ho_out_sr",
+                        xrule=False,
+                        yline="98.0",
+                    )
+                    st.markdown(
+                        *styling(
+                            "📶 Inter HO",
+                            font_size=24,
+                            text_align="left",
+                            tag="h6",
                         )
-                        self.chart_generator.create_charts_for_daily(
-                            df_daily_sow,
-                            "cell_name",
-                            "date",
-                            "service_drop_rate",
-                            xrule=False,
-                            yline="0.10",
+                    )
+                    self.chart_generator.create_charts_for_daily(
+                        df_daily_sow,
+                        "cell_name",
+                        "date",
+                        "inter_frequency_handover_sr",
+                        xrule=False,
+                        yline="98.0",
+                    )
+
+                    st.markdown(
+                        *styling(
+                            "📶 L2G SR",
+                            font_size=24,
+                            text_align="left",
+                            tag="h6",
                         )
-                        st.markdown(
-                            *styling(
-                                f"📶 Intra HO {site}",
-                                font_size=24,
-                                text_align="left",
-                                tag="h6",
-                            )
+                    )
+                    self.chart_generator.create_charts_for_daily(
+                        df_daily_sow,
+                        "cell_name",
+                        "date",
+                        "lte_to_geran_redirection_sr",
+                        xrule=False,
+                        yline="99.9",
+                    )
+                    st.markdown(
+                        *styling(
+                            "📶 RSSI",
+                            font_size=24,
+                            text_align="left",
+                            tag="h6",
                         )
-                        self.chart_generator.create_charts_for_daily(
-                            df_daily_sow,
-                            "cell_name",
-                            "date",
-                            "intrafreq_ho_out_sr",
-                            xrule=False,
-                            yline="98.0",
+                    )
+                    self.chart_generator.create_charts_for_daily(
+                        df_daily_sow,
+                        "cell_name",
+                        "date",
+                        "uplink_interference",
+                        xrule=False,
+                        yline="-100",
+                    )
+                    st.markdown(
+                        *styling(
+                            "📶 Availability",
+                            font_size=24,
+                            text_align="left",
+                            tag="h6",
                         )
-                        st.markdown(
-                            *styling(
-                                f"📶 Inter HO {site}",
-                                font_size=24,
-                                text_align="left",
-                                tag="h6",
-                            )
+                    )
+                    self.chart_generator.create_charts_for_daily(
+                        df_daily_sow,
+                        "cell_name",
+                        "date",
+                        "radio_network_availability_rate",
+                        xrule=False,
+                    )
+                    st.markdown(
+                        *styling(
+                            "📶 CQI",
+                            font_size=24,
+                            text_align="left",
+                            tag="h6",
                         )
-                        self.chart_generator.create_charts_for_daily(
-                            df_daily_sow,
-                            "cell_name",
-                            "date",
-                            "inter_frequency_handover_sr",
-                            xrule=False,
-                            yline="98.0",
+                    )
+                    self.chart_generator.create_charts_for_daily(
+                        df_daily_sow,
+                        "cell_name",
+                        "date",
+                        "cqi",
+                        xrule=False,
+                        yline="9",
+                    )
+                    st.markdown(
+                        *styling(
+                            "📶 SE",
+                            font_size=24,
+                            text_align="left",
+                            tag="h6",
                         )
-                        sac.divider(
-                            label="PAGE 2",
-                            align="center",
-                            size="xl",
-                            color="#DC0013",
+                    )
+                    self.chart_generator.create_charts_for_daily(
+                        df_daily_sow,
+                        "cell_name",
+                        "date",
+                        "se",
+                        xrule=False,
+                        yline="1.4",
+                    )
+                    sac.divider(
+                        label="PAGE 3",
+                        align="center",
+                        size="xl",
+                        color="#DC0013",
+                    )
+                    st.markdown(
+                        *styling(
+                            "📶 User Throughput",
+                            font_size=24,
+                            text_align="left",
+                            tag="h6",
                         )
-                        st.markdown(
-                            *styling(
-                                f"📶 L2G SR {site}",
-                                font_size=24,
-                                text_align="left",
-                                tag="h6",
-                            )
+                    )
+                    self.chart_generator.create_charts_for_daily(
+                        df_daily_sow,
+                        "cell_name",
+                        "date",
+                        "user_dl_avg_throughput_mbps",
+                        xrule=False,
+                    )
+                    st.markdown(
+                        *styling(
+                            "📶 Cell Throughput",
+                            font_size=24,
+                            text_align="left",
+                            tag="h6",
                         )
-                        self.chart_generator.create_charts_for_daily(
-                            df_daily_sow,
-                            "cell_name",
-                            "date",
-                            "lte_to_geran_redirection_sr",
-                            xrule=False,
-                            yline="99.9",
+                    )
+                    self.chart_generator.create_charts_for_daily(
+                        df_daily_sow,
+                        "cell_name",
+                        "date",
+                        "cell_dl_avg_throughput_mbps",
+                        xrule=False,
+                    )
+                    st.markdown(
+                        *styling(
+                            "📶 Active User",
+                            font_size=24,
+                            text_align="left",
+                            tag="h6",
                         )
-                        st.markdown(
-                            *styling(
-                                f"📶 RSSI {site}",
-                                font_size=24,
-                                text_align="left",
-                                tag="h6",
-                            )
+                    )
+                    self.chart_generator.create_charts_for_daily(
+                        df_daily_sow,
+                        "cell_name",
+                        "date",
+                        "active_user",
+                        xrule=False,
+                    )
+                    st.markdown(
+                        *styling(
+                            "📶 PRB Utilization",
+                            font_size=24,
+                            text_align="left",
+                            tag="h6",
                         )
-                        self.chart_generator.create_charts_for_daily(
-                            df_daily_sow,
-                            "cell_name",
-                            "date",
-                            "uplink_interference",
-                            xrule=False,
-                            yline="-100",
+                    )
+                    self.chart_generator.create_charts_for_daily(
+                        df_hourly,
+                        "Cell Name",
+                        "Time",
+                        "DL Resource Block Utilizing Rate %_FIX",
+                        xrule=False,
+                    )
+                    st.markdown(*styling(""))
+                    st.markdown(
+                        *styling(
+                            f"Payload - {site}",
+                            font_size=28,
+                            text_align="Center",
+                            background_color="#DC0013",
+                            tag="h6",
+                            font_color="#FFFFFF",
                         )
-                        st.markdown(
-                            *styling(
-                                f"📶 Availability {site}",
-                                font_size=24,
-                                text_align="left",
-                                tag="h6",
-                            )
+                    )
+                    st.markdown(*styling(""))
+                    st.markdown(
+                        *styling(
+                            "📶 Payload SOW",
+                            font_size=24,
+                            text_align="left",
+                            tag="h6",
                         )
-                        self.chart_generator.create_charts_for_daily(
-                            df_daily_sow,
-                            "cell_name",
-                            "date",
-                            "radio_network_availability_rate",
-                            xrule=False,
+                    )
+                    self.chart_generator.create_charts_for_stacked_area(
+                        df=df_daily_sow,
+                        cell_name="cell_name",
+                        x_param="date",
+                        y_param="total_traffic_volume_gb",
+                    )
+                    st.markdown(
+                        *styling(
+                            "📶 Payload Sector All System",
+                            font_size=24,
+                            text_align="left",
+                            tag="h6",
                         )
-                        st.markdown(
-                            *styling(
-                                f"📶 CQI {site}",
-                                font_size=24,
-                                text_align="left",
-                                tag="h6",
-                            )
+                    )
+                    self.chart_generator.create_charts_for_stacked_area(
+                        df=df_daily_all,
+                        cell_name="cell_name",
+                        x_param="date",
+                        y_param="total_traffic_volume_gb",
+                        # key=f"stacked_area_all_system_{site}",  # Unique key added
+                    )
+                    st.markdown(
+                        *styling(
+                            f"📶 Total Payload {site}",
+                            font_size=24,
+                            text_align="left",
+                            tag="h6",
                         )
-                        self.chart_generator.create_charts_for_daily(
-                            df_daily_sow,
-                            "cell_name",
-                            "date",
-                            "cqi",
-                            xrule=False,
-                            yline="9",
-                        )
-                        st.markdown(
-                            *styling(
-                                f"📶 SE {site}",
-                                font_size=24,
-                                text_align="left",
-                                tag="h6",
-                            )
-                        )
-                        self.chart_generator.create_charts_for_daily(
-                            df_daily_sow,
-                            "cell_name",
-                            "date",
-                            "se",
-                            xrule=False,
-                            yline="1.4",
-                        )
-                        sac.divider(
-                            label="PAGE 3",
-                            align="center",
-                            size="xl",
-                            color="#DC0013",
-                        )
-                        st.markdown(
-                            *styling(
-                                f"📶 User Throughput {site}",
-                                font_size=24,
-                                text_align="left",
-                                tag="h6",
-                            )
-                        )
-                        self.chart_generator.create_charts_for_daily(
-                            df_daily_sow,
-                            "cell_name",
-                            "date",
-                            "user_dl_avg_throughput_mbps",
-                            xrule=False,
-                        )
-                        st.markdown(
-                            *styling(
-                                f"📶 Cell Throughput {site}",
-                                font_size=24,
-                                text_align="left",
-                                tag="h6",
-                            )
-                        )
-                        self.chart_generator.create_charts_for_daily(
-                            df_daily_sow,
-                            "cell_name",
-                            "date",
-                            "cell_dl_avg_throughput_mbps",
-                            xrule=False,
-                        )
-                        st.markdown(
-                            *styling(
-                                f"📶 Active User {site}",
-                                font_size=24,
-                                text_align="left",
-                                tag="h6",
-                            )
-                        )
-                        self.chart_generator.create_charts_for_daily(
-                            df_daily_sow,
-                            "cell_name",
-                            "date",
-                            "active_user",
-                            xrule=False,
-                        )
-                        st.markdown(
-                            *styling(
-                                f"📶 PRB Utilization {site}",
-                                font_size=24,
-                                text_align="left",
-                                tag="h6",
-                            )
-                        )
-                        self.chart_generator.create_charts_for_daily(
-                            df_hourly,
-                            "Cell Name",
-                            "Time",
-                            "DL Resource Block Utilizing Rate %_FIX",
-                            xrule=False,
-                        )
-                        st.markdown(*styling(""))
-                        st.markdown(
-                            *styling(
-                                f"Payload - {site}",
-                                font_size=28,
-                                text_align="Center",
-                                background_color="#DC0013",
-                                tag="h6",
-                                font_color="#FFFFFF",
-                            )
-                        )
-                        st.markdown(*styling(""))
-                        st.markdown(
-                            *styling(
-                                f"📶 Payload SOW {site}",
-                                font_size=24,
-                                text_align="left",
-                                tag="h6",
-                            )
-                        )
-                        self.chart_generator.create_charts_for_stacked_area(
-                            df=df_daily_sow,
-                            cell_name="cell_name",
-                            x_param="date",
-                            y_param="total_traffic_volume_gb",
-                        )
-                        st.markdown(
-                            *styling(
-                                f"📶 Payload Sector All System  {site}",
-                                font_size=24,
-                                text_align="left",
-                                tag="h6",
-                            )
-                        )
-                        self.chart_generator.create_charts_for_stacked_area(
-                            df=df_daily_all,
-                            cell_name="cell_name",
-                            x_param="date",
-                            y_param="total_traffic_volume_gb",
-                        )
-                        st.markdown(
-                            *styling(
-                                f"📶 Total Payload {site}",
-                                font_size=24,
-                                text_align="left",
-                                tag="h6",
-                            )
-                        )
-                        self.chart_generator.create_charts_for_stacked_area_neid(
-                            df=df_daily_all,
-                            neid="neid",
-                            x_param="date",
-                            y_param="total_traffic_volume_gb",
-                            key=f"stacked_area_neid_tab1_{site}",  # Unique key added
-                        )
+                    )
+                    self.chart_generator.create_charts_for_stacked_area_neid(
+                        df=df_daily_all,
+                        neid="neid",
+                        x_param="date",
+                        y_param="total_traffic_volume_gb",
+                        key=f"stacked_area_neid_tab1_{site}",  # Unique key added
+                    )
 
             with tab2:
                 for site in selected_sites:
@@ -1868,210 +2039,123 @@ class App:
                         self.chart_generator.create_daily_charts(df_to_use, site)
 
             with tab3:
-                for site in selected_sites:
-                    lte_cosite = self.dataframe_manager.get_dataframe(
-                        f"dailyall_{site}"
-                    )
-                    gsm_cosite = self.dataframe_manager.get_dataframe(
-                        f"gsmdaily_{site}"
-                    )
+                if selected_nbr is not None:
+                    col1, col2 = st.columns([1, 1], gap="small")
+                    con1 = col1.container(border=True)
+                    con2 = col2.container(border=True)
 
-                    lte_cluster = (
-                        self.dataframe_manager.get_dataframe(f"nbr_{site}")
-                        if selected_nbr
-                        else self.dataframe_manager.get_dataframe(f"dailyall_{site}")
-                    )
-                    gsm_cluster = (
-                        self.dataframe_manager.get_dataframe(f"gsmdaily_cluster_{site}")
-                        if selected_nbr
-                        else self.dataframe_manager.get_dataframe(f"gsmdaily_{site}")
-                    )
-                    st.write(gsm_cluster)
-                    st.write(lte_cluster)
-                    if (
-                        selected_nbr
-                        and "Run Query" in st.session_state
-                        and st.session_state["Run Query"]
-                    ):
-                        start_date, end_date = date_range
-                        start_date_str = start_date.strftime("%Y-%m-%d")
-                        end_date_str = end_date.strftime("%Y-%m-%d")
-                        df_nbr = self.query_manager.get_nbr_data(
-                            selected_nbr,
-                            start_date_str,
-                            end_date_str,
-                        )
-                        df_gsm_cluster = self.query_manager.get_gsmdaily_cluster(
-                            selected_nbr,
-                            start_date_str,
-                            end_date_str,
-                        )
-                        self.dataframe_manager.add_dataframe(f"nbr_{site}", df_nbr)
-                        self.dataframe_manager.add_dataframe(
-                            f"gsmdaily_cluster_{site}", df_gsm_cluster
-                        )
+                    with con1:
+                        for site in selected_sites:
+                            df_lte_site = self.dataframe_manager.get_dataframe(
+                                f"dailyall_{site}"
+                            )
+                            if df_lte_site is not None and not df_lte_site.empty:
+                                st.markdown(
+                                    *styling(
+                                        f"📶 {site} - Payload LTE Co-Site",
+                                        font_size=24,
+                                        text_align="left",
+                                        tag="h4",
+                                    )
+                                )
+                                self.chart_generator.create_charts_for_stacked_area_neid(
+                                    df=df_lte_site,
+                                    neid="neid",
+                                    x_param="date",
+                                    y_param="total_traffic_volume_gb",
+                                    key=f"stacked_area_lte_{site}_tab3",
+                                )
 
-                    # if lte_cluster is None:
-                    #     cols = st.columns(1)
-                    #     col1 = cols[0]
-                    #     col2 = None
-                    # else:
-                    #     cols = st.columns(2)
-                    #     col1, col2 = cols
-                    col1 = st.columns(1)
-                    # with col1:
-                    st.markdown(
-                        *styling(
-                            f"📶 Payload (Mb) LTE Co-Site {site}",
-                            font_size=24,
-                            text_align="left",
-                            tag="h6",
-                        )
-                    )
-                    self.chart_generator.create_charts_stacked(
-                        df=lte_cosite,
-                        neid="neid",
-                        x_param="date",
-                        y_param="total_traffic_volume_gb",
-                        key=f"stacked_area_neid_cosite_{site}",
-                    )
-                    st.markdown(
-                        *styling(
-                            f"📶 TCH Traffic 2G Co-Site {site}",
-                            font_size=24,
-                            text_align="left",
-                            tag="h6",
-                        )
-                    )
-                    self.chart_generator.create_charts_line(
-                        df=df_gsm,
-                        neid="cellname",
-                        x_param="date",
-                        y_param="TCH Traffic",
-                        key=f"stacked_area_neid_cosite_{site}",
-                    )
-                    st.markdown(
-                        *styling(
-                            f"📶 SDCCH Traffic 2G Co-Site {site}",
-                            font_size=24,
-                            text_align="left",
-                            tag="h6",
-                        )
-                    )
-                    self.chart_generator.create_charts_line(
-                        df=df_gsm,
-                        neid="cellname",
-                        x_param="date",
-                        y_param="SDCCH Traffic",
-                        key=f"stacked_area_neid_cosite_{site}",
-                    )
-                    st.markdown(
-                        *styling(
-                            f"📶 GPRS Payload (Mbyte) 2G Co-Site {site}",
-                            font_size=24,
-                            text_align="left",
-                            tag="h6",
-                        )
-                    )
-                    self.chart_generator.create_charts_stacked(
-                        df=df_gsm,
-                        neid="cellname",
-                        x_param="date",
-                        y_param="GPRS Payload (Mbyte)",
-                        key=f"stacked_area_neid_cosite_{site}",
-                    )
-                    st.markdown(
-                        *styling(
-                            f"📶 EDGE Payload (Mbyte) 2G Co-Site {site}",
-                            font_size=24,
-                            text_align="left",
-                            tag="h6",
-                        )
-                    )
-                    self.chart_generator.create_charts_stacked(
-                        df=df_gsm,
-                        neid="cellname",
-                        x_param="date",
-                        y_param="EDGE Payload (Mbyte)",
-                        key=f"stacked_area_neid_cosite_{site}",
-                    )
-                    # if col2:
-                    #     with col2:
-                    #         st.markdown(
-                    #             *styling(
-                    #                 f"📶 Payload (Mb) LTE Cluster {site}",
-                    #                 font_size=24,
-                    #                 text_align="left",
-                    #                 tag="h6",
-                    #             )
-                    #         )
-                    #         self.chart_generator.create_charts_stacked(
-                    #             df=lte_cluster,
-                    #             neid="siteid",
-                    #             x_param="date",
-                    #             y_param="total_traffic_volume_gb",
-                    #             key=f"stacked_area_neid_cluster_{site}",
-                    #         )
-                    #         st.markdown(
-                    #             *styling(
-                    #                 f"📶 TCH Traffic 2G Cluster {site}",
-                    #                 font_size=24,
-                    #                 text_align="left",
-                    #                 tag="h6",
-                    #             )
-                    #         )
-                    #         self.chart_generator.create_charts_line(
-                    #             df=gsm_cluster,
-                    #             neid="siteid",
-                    #             x_param="date",
-                    #             y_param="TCH Traffic",
-                    #             key=f"gsm_cluster_tch_{site}",
-                    #         )
-                    #         st.markdown(
-                    #             *styling(
-                    #                 f"📶 SDCCH Traffic 2G Cluster {site}",
-                    #                 font_size=24,
-                    #                 text_align="left",
-                    #                 tag="h6",
-                    #             )
-                    #         )
-                    #         self.chart_generator.create_charts_line(
-                    #             df=gsm_cluster,
-                    #             neid="siteid",
-                    #             x_param="date",
-                    #             y_param="SDCCH Traffic",
-                    #             key=f"gsm_cluster_sdcch_{site}",
-                    #         )
-                    #         st.markdown(
-                    #             *styling(
-                    #                 f"📶 GPRS Payload (Mbyte) 2G Cluster {site}",
-                    #                 font_size=24,
-                    #                 text_align="left",
-                    #                 tag="h6",
-                    #             )
-                    #         )
-                    #         self.chart_generator.create_charts_stacked(
-                    #             df=gsm_cluster,
-                    #             neid="siteid",
-                    #             x_param="date",
-                    #             y_param="GPRS Payload (Mbyte)",
-                    #             key=f"gsm_cluster_gprs_{site}",
-                    #         )
-                    #         st.markdown(
-                    #             *styling(
-                    #                 f"📶 EDGE Payload (Mbyte) 2G Cluster {site}",
-                    #                 font_size=24,
-                    #                 text_align="left",
-                    #                 tag="h6",
-                    #             )
-                    #         )
-                    #         self.chart_generator.create_charts_stacked(
-                    #             df=gsm_cluster,
-                    #             neid="siteid",
-                    #             x_param="date",
-                    #             y_param="EDGE Payload (Mbyte)",
-                    #             key=f"gsm_cluster_edge_{site}",
-                    #         )
+                                df_gsm_site = self.dataframe_manager.get_dataframe(
+                                    f"gsmdaily_{site}"
+                                )
+                                if df_gsm_site is not None and not df_gsm_site.empty:
+                                    st.markdown(
+                                        *styling(
+                                            f"📶 {site} - KPI GSM Co-Site",
+                                            font_size=24,
+                                            text_align="left",
+                                            tag="h4",
+                                        )
+                                    )
+                                    self.chart_generator.create_gsm_daily_charts(
+                                        df_gsm_site, site
+                                    )
+
+                    with con2:
+                        site = selected_sites[0] if selected_sites else "Neighbors"
+                        df_lte_nbr = self.dataframe_manager.get_dataframe("lte_nbr")
+                        df_nbr_gsm = self.dataframe_manager.get_dataframe("gsm_nbr")
+                        if df_lte_nbr is not None and not df_lte_nbr.empty:
+                            st.markdown(
+                                *styling(
+                                    f"📶 {site} - Payload LTE Cluster",
+                                    font_size=24,
+                                    text_align="left",
+                                    tag="h4",
+                                )
+                            )
+                            self.chart_generator.create_charts_for_stacked_area_neid(
+                                df=df_lte_nbr,
+                                neid="neid",
+                                x_param="date",
+                                y_param="total_traffic_volume_gb",
+                                key="stacked_area_lte_nbr_tab3",
+                            )
+
+                        if df_nbr_gsm is not None and not df_nbr_gsm.empty:
+                            st.markdown(
+                                *styling(
+                                    f"📶 {site} - KPI GSM Cluster",
+                                    font_size=24,
+                                    text_align="left",
+                                    tag="h4",
+                                )
+                            )
+                            self.chart_generator.create_gsm_daily_charts(
+                                df_nbr_gsm, "Neighbors"
+                            )
+
+                else:
+                    col1 = st.columns([1])
+                    con1 = col1.container(border=True)
+                    with con1:
+                        for site in selected_sites:
+                            df_lte_site = self.dataframe_manager.get_dataframe(
+                                f"dailyall_{site}"
+                            )
+                            if df_lte_site is not None and not df_lte_site.empty:
+                                st.markdown(
+                                    *styling(
+                                        f"📶 {site} - Payload LTE Co-Site",
+                                        font_size=24,
+                                        text_align="left",
+                                        tag="h4",
+                                    )
+                                )
+                                self.chart_generator.create_charts_for_stacked_area_neid(
+                                    df=df_lte_site,
+                                    neid="neid",
+                                    x_param="date",
+                                    y_param="total_traffic_volume_gb",
+                                    key=f"stacked_area_lte_{site}_tab3_single",
+                                )
+
+                            df_gsm_site = self.dataframe_manager.get_dataframe(
+                                f"gsmdaily_{site}"
+                            )
+                            if df_gsm_site is not None and not df_gsm_site.empty:
+                                st.markdown(
+                                    *styling(
+                                        f"📶 {site} - KPI GSM Co-Site Daily",
+                                        font_size=24,
+                                        text_align="left",
+                                        tag="h4",
+                                    )
+                                )
+                                self.chart_generator.create_gsm_daily_charts(
+                                    df_gsm_site, site
+                                )
 
             with tab4:
                 for site in selected_sites:
@@ -2095,62 +2179,7 @@ class App:
                         ].apply(chart_generator.determine_sector)
                         df_timingadvance = df_timingadvance.sort_values(by="sector")
 
-                        html_table = "<table class='custom-table'>"
-                        html_table += (
-                            "<thead><tr>"
-                            + "".join(
-                                f"<th>{col}</th>" for col in df_timingadvance.columns
-                            )
-                            + "</tr></thead>"
-                        )
-                        html_table += "<tbody>"
-                        for row in df_timingadvance.itertuples(index=False):
-                            html_table += (
-                                "<tr>"
-                                + "".join(f"<td>{val}</td>" for val in row)
-                                + "</tr>"
-                            )
-                        html_table += "</tbody></table>"
-
-                        st.markdown(
-                            """
-                            <style>
-                            .custom-table {
-                                font-size: 10px !important;
-                                font-family: Arial, sans-serif !important;
-                                border-collapse: collapse !important;
-                                text-align: center !important;
-                                width: 100% !important;
-                            }
-                            .custom-table th {
-                                background-color: #F5F5F5 !important;
-                                border: 1px solid #ddd !important;
-                                padding: 2px !important;
-                                text-align: center !important;
-                                vertical-align: top !important;
-                                height: 20px !important;
-                            }
-                            .custom-table td {
-                                border: 1px solid #ddd !important;
-                                padding: 2px !important;
-                                vertical-align: top !important;
-                                text-align: center !important;
-                                height: 20px !important;
-                            }
-                            .custom-table tr {
-                                height: 20px !important;
-                            }
-                            .custom-table tr:nth-child(even) {
-                                background-color: #f9f9f9 !important;
-                            }
-                            .custom-table tr:hover {
-                                background-color: #f5f5f5 !important;
-                            }
-                            </style>
-                            """
-                            + html_table,
-                            unsafe_allow_html=True,
-                        )
+                        self._display_table(df_timingadvance)
 
                         col1 = st.columns(1)[0]
                         with col1:
