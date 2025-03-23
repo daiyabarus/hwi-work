@@ -72,14 +72,14 @@ class StreamlitInterface:
         return data
 
     def site_selection(self, sitelist):
-        return st.multiselect("SITEID", sitelist)
+        return st.multiselect("SITE", sitelist)
 
     def neid_selection(self):
         band_options = ["L1800", "L900", "L2100", "L2300-ME", "L2300-MF", "L2300-MV"]
         return st.multiselect("BAND", band_options)
 
     def nbr_selection(self, sitelist):
-        return st.multiselect("COSITE & 1ST TIER", sitelist)
+        return st.multiselect("1ST TIER", sitelist)
 
     def select_date_range(self):
         if "date_range" not in st.session_state:
@@ -127,7 +127,7 @@ class DateCalc:
         """
         if date_column not in dataframe.columns:
             raise ValueError(f"Column '{date_column}' not found in DataFrame")
-        self._df = dataframe.copy()  # Store a copy to prevent external modifications
+        self._df = dataframe.copy()
         self._date_col = date_column
 
     def _validate_state(self) -> None:
@@ -173,13 +173,11 @@ class DateCalc:
         """
         self._validate_state()
 
-        # Filter once and reuse
         date_df = self._df[self._df[self._date_col] == date]
 
         if date_df.empty:
             return pd.Series(index=keep_columns + avg_columns, dtype=float)
 
-        # Calculate averages and kept values efficiently
         avg_values = date_df[avg_columns].mean()
         kept_values = (
             date_df[keep_columns].iloc[0]
@@ -204,7 +202,6 @@ class DateCalc:
         """
         self._validate_state()
 
-        # Get unique dates efficiently
         unique_dates = self._df[self._date_col].unique()
         max_date = self.get_max_date()
         target_dates = [max_date - timedelta(days=i) for i in range(num_days)][::-1]
@@ -215,21 +212,18 @@ class DateCalc:
                 columns=keep_columns + [f"Avg {col}" for col in avg_columns]
             )
 
-        # Calculate averages for valid dates
         results = [
             self.calculate_avg_by_date(date, avg_columns, keep_columns)
             for date in valid_dates
         ]
         result_df = pd.DataFrame(results)
 
-        # Calculate total average
         total_avg = pd.Series(
             index=keep_columns,
             data=["" if col == self._date_col else "Average" for col in keep_columns],
         )
         total_avg = pd.concat([total_avg, result_df[avg_columns].mean()])
 
-        # Combine results
         final_df = pd.concat([result_df, pd.DataFrame([total_avg])], ignore_index=True)
         final_df.columns = keep_columns + [f"Avg {col}" for col in avg_columns]
 
@@ -1262,7 +1256,7 @@ class ChartGenerator:
                     y=alt.Y(
                         f"{y_param}:Q",
                         title=None,
-                        stack=None,  # Remove stacking for line chart
+                        stack=None,
                     ),
                     color=alt.Color(
                         f"{neid}:N",
@@ -1460,7 +1454,6 @@ class App:
                                     f"sitesow_{site}", df_daily_all_copy
                                 )
 
-                            # Fetch LTE and GSM neighbor data consistently
                             df_nbr = self.query_manager.get_nbr_data(
                                 selected_nbr if selected_nbr else [site],
                                 start_date_str,
@@ -1483,13 +1476,11 @@ class App:
                                 f"hourly_{site}", df_hourly
                             )
 
-                            # Fetch LTE TA state for selected_sites
                             df_tastate = self.query_manager.get_ltetastate_data([site])
                             self.dataframe_manager.add_dataframe(
                                 f"tastate_{site}", df_tastate
                             )
 
-                            # Fetch GSM daily data for selected_sites
                             df_gsm = self.query_manager.get_gsmdaily(
                                 site, start_date_str, end_date_str
                             )
@@ -1497,7 +1488,6 @@ class App:
                                 f"gsmdaily_{site}", df_gsm
                             )
 
-                        # Fetch GSM and LTE data for selected_nbr (only if selected_nbr exists)
                         if selected_nbr:
                             df_nbr_lte = self.query_manager.get_nbr_data(
                                 selected_nbr, start_date_str, end_date_str
@@ -1513,7 +1503,7 @@ class App:
             key.startswith("dailysow_") for key in self.dataframe_manager.dataframes
         ):
             tab1, tab2, tab3, tab4 = st.tabs(
-                ["SOW SITE", "COLO & ClUSTER", "PAYLOAD COLLO & ClUSTER", "TA"]
+                ["OSS SOW", "OSS COLLO & ClUSTER", "PAYLOAD COLLO & ClUSTER", "TA"]
             )
 
             with tab1:
@@ -2008,7 +1998,6 @@ class App:
                         cell_name="cell_name",
                         x_param="date",
                         y_param="total_traffic_volume_gb",
-                        # key=f"stacked_area_all_system_{site}",  # Unique key added
                     )
                     st.markdown(
                         *styling(
@@ -2023,10 +2012,20 @@ class App:
                         neid="neid",
                         x_param="date",
                         y_param="total_traffic_volume_gb",
-                        key=f"stacked_area_neid_tab1_{site}",  # Unique key added
+                        key=f"stacked_area_neid_tab1_{site}",
                     )
 
             with tab2:
+                st.markdown(
+                    *styling(
+                        f"Mandatory OSS Collo & Cluster - {site}",
+                        font_size=28,
+                        text_align="Center",
+                        background_color="#DC0013",
+                        tag="h6",
+                        font_color="#FFFFFF",
+                    )
+                )
                 for site in selected_sites:
                     df_daily_all = self.dataframe_manager.get_dataframe(
                         f"dailyall_{site}"
@@ -2158,6 +2157,16 @@ class App:
                                 )
 
             with tab4:
+                st.markdown(
+                    *styling(
+                        f"TA - {site}",
+                        font_size=28,
+                        text_align="Center",
+                        background_color="#DC0013",
+                        tag="h6",
+                        font_color="#FFFFFF",
+                    )
+                )
                 for site in selected_sites:
                     df_timingadvance = self.dataframe_manager.get_dataframe(
                         f"tastate_{site}"
@@ -2165,7 +2174,7 @@ class App:
 
                     st.markdown(
                         *styling(
-                            f"📶 Table Timing Advance {site}",
+                            f"📶 TA Distribution - {site}",
                             font_size=24,
                             text_align="left",
                             tag="h4",
@@ -2185,7 +2194,7 @@ class App:
                         with col1:
                             st.markdown(
                                 *styling(
-                                    f"📶 Graph Timing Advance {site}",
+                                    f"📶 Graph TA Distribution - {site}",
                                     font_size=24,
                                     text_align="left",
                                     tag="h4",
