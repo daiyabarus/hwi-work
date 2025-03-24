@@ -3,15 +3,15 @@ from typing import ClassVar
 
 class ColorPalette:
     color_codes: ClassVar[list[str]] = [
-        "#00A86B",
+        "#00B0F0",
         "#B60008",
-        "#800000",
-        "#5E2EA7",
-        "#190041",
+        "#92D050",
+        "#FFC000",
         "#D26939",
         "#9932CC",
         "#00FF00",
         "#002D80",
+        "#5E2EA7",
         "#FF1493",
         "#4682B4",
         "#FF7795",

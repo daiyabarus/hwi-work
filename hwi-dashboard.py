@@ -1,7 +1,8 @@
 # import math
 import os
-from datetime import timedelta
-from typing import Any, List, Optional
+from datetime import datetime, timedelta
+from functools import lru_cache
+from typing import Any, List, Tuple
 
 import altair as alt
 import pandas as pd
@@ -18,8 +19,8 @@ from sqlalchemy.orm import sessionmaker
 from streamlit_extras.mandatory_date_range import date_range_picker
 from streamlit_extras.stylable_container import stylable_container
 
-from colors import ColorPalette
-from styles import styling
+from utils.colors import ColorPalette
+from utils.styles import styling
 
 pd.options.mode.copy_on_write = True
 
@@ -365,7 +366,7 @@ class QueryManager:
         Returns:
             pd.DataFrame: DataFrame containing GSM daily data, empty if no siteid
         """
-        if not siteid:  # Check if siteid is empty or None
+        if not siteid:
             return pd.DataFrame()
 
         params = {
@@ -625,7 +626,7 @@ class ChartGenerator:
         df["date"] = pd.to_datetime(df["date"])
 
         if "cellname" in df.columns:
-            df["cellsector"] = df["siteid"] + "_" + df["cellname"].str[-4:]
+            df["cellsector"] = df["siteid"] + "_" + df["cellname"].str[-3:]
         else:
             st.warning(
                 "Kolom 'cellname' tidak ditemukan. Menggunakan 'cell_name' sebagai fallback."
