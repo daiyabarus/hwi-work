@@ -189,14 +189,14 @@ def main():
                 [f'"eNodeB Name" LIKE :site_{i}' for i in range(len(selected_sites))]
             )
             query = text(
-                """
+                f"""
                 SELECT
                     "Time", "eNodeB Name", "Cell Name",
                     "DL Resource Block Utilizing Rate %_FIX",
                     "Active User", "User Downlink Average Throughput (Mbps)"
                 FROM ltehourly
-                WHERE ({}) AND "Time" BETWEEN :start_date AND :end_date
-                """.format(like_conditions)
+                WHERE ({like_conditions}) AND "Time" BETWEEN :start_date AND :end_date
+                """
             )
             params = {f"site_{i}": f"%{site}%" for i, site in enumerate(selected_sites)}
             params.update({"start_date": start_date, "end_date": end_date})
@@ -229,7 +229,7 @@ def main():
             for title, param in parameters:
                 st.markdown(
                     *styling(
-                        f"📶 {title} {site}",
+                        f"📶 {title} - {site}",
                         font_size=24,
                         text_align="left",
                         tag="h6",

@@ -1947,7 +1947,7 @@ class App:
                     )
                     st.markdown(
                         *styling(
-                            f"📶 PRB Utilization {site}",
+                            f"📶 PRB Utilization - {site}",
                             font_size=24,
                             text_align="left",
                             tag="h6",
@@ -2002,7 +2002,7 @@ class App:
                     )
                     st.markdown(
                         *styling(
-                            f"📶 Total Payload {site}",
+                            f"📶 Total Payload - {site}",
                             font_size=24,
                             text_align="left",
                             tag="h6",
