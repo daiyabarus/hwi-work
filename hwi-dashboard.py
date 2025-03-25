@@ -1714,7 +1714,7 @@ class App:
                     if df_daily_sow is not None:
                         st.markdown(
                             *styling(
-                                "📶 RRC SR",
+                                f"📶 RRC SR - {site}",
                                 font_size=24,
                                 text_align="left",
                                 tag="h6",
@@ -1730,7 +1730,7 @@ class App:
                         )
                         st.markdown(
                             *styling(
-                                "📶 CSSR",
+                                f"📶 CSSR - {site}",
                                 font_size=24,
                                 text_align="left",
                                 tag="h6",
@@ -1746,7 +1746,7 @@ class App:
                     )
                     st.markdown(
                         *styling(
-                            "📶 ERAB SR",
+                            f"📶 ERAB SR - {site}",
                             font_size=24,
                             text_align="left",
                             tag="h6",
@@ -1762,7 +1762,7 @@ class App:
                     )
                     st.markdown(
                         *styling(
-                            "📶 SAR",
+                            f"📶 SAR - {site}",
                             font_size=24,
                             text_align="left",
                             tag="h6",
@@ -1784,7 +1784,7 @@ class App:
                     )
                     st.markdown(
                         *styling(
-                            "📶 Intra HO",
+                            f"📶 Intra HO - {site}",
                             font_size=24,
                             text_align="left",
                             tag="h6",
@@ -1800,7 +1800,7 @@ class App:
                     )
                     st.markdown(
                         *styling(
-                            "📶 Inter HO",
+                            f"📶 Inter HO - {site}",
                             font_size=24,
                             text_align="left",
                             tag="h6",
@@ -1817,7 +1817,7 @@ class App:
 
                     st.markdown(
                         *styling(
-                            "📶 L2G SR",
+                            f"📶 L2G SR - {site}",
                             font_size=24,
                             text_align="left",
                             tag="h6",
@@ -1833,7 +1833,7 @@ class App:
                     )
                     st.markdown(
                         *styling(
-                            "📶 RSSI",
+                            f"📶 RSSI - {site}",
                             font_size=24,
                             text_align="left",
                             tag="h6",
@@ -1849,7 +1849,7 @@ class App:
                     )
                     st.markdown(
                         *styling(
-                            "📶 Availability",
+                            f"📶 Availability - {site}",
                             font_size=24,
                             text_align="left",
                             tag="h6",
@@ -1864,7 +1864,7 @@ class App:
                     )
                     st.markdown(
                         *styling(
-                            "📶 CQI",
+                            f"📶 CQI - {site}",
                             font_size=24,
                             text_align="left",
                             tag="h6",
@@ -1880,7 +1880,7 @@ class App:
                     )
                     st.markdown(
                         *styling(
-                            "📶 SE",
+                            f"📶 SE - {site}",
                             font_size=24,
                             text_align="left",
                             tag="h6",
@@ -1902,7 +1902,7 @@ class App:
                     )
                     st.markdown(
                         *styling(
-                            "📶 User Throughput",
+                            f"📶 User Throughput - {site}",
                             font_size=24,
                             text_align="left",
                             tag="h6",
@@ -1917,7 +1917,7 @@ class App:
                     )
                     st.markdown(
                         *styling(
-                            "📶 Cell Throughput",
+                            f"📶 Cell Throughput - {site}",
                             font_size=24,
                             text_align="left",
                             tag="h6",
@@ -1932,7 +1932,7 @@ class App:
                     )
                     st.markdown(
                         *styling(
-                            "📶 Active User",
+                            f"📶 Active User - {site}",
                             font_size=24,
                             text_align="left",
                             tag="h6",
@@ -1947,7 +1947,7 @@ class App:
                     )
                     st.markdown(
                         *styling(
-                            "📶 PRB Utilization",
+                            f"📶 PRB Utilization {site}",
                             font_size=24,
                             text_align="left",
                             tag="h6",
@@ -1974,7 +1974,7 @@ class App:
                     st.markdown(*styling(""))
                     st.markdown(
                         *styling(
-                            "📶 Payload SOW",
+                            f"📶 Payload SOW - {site}",
                             font_size=24,
                             text_align="left",
                             tag="h6",
@@ -1988,7 +1988,7 @@ class App:
                     )
                     st.markdown(
                         *styling(
-                            "📶 Payload Sector All System",
+                            f"📶 Payload Sector All System - {site}",
                             font_size=24,
                             text_align="left",
                             tag="h6",
