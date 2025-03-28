@@ -337,7 +337,7 @@ class QueryManager:
         """Fetch GSM daily data"""
         query = text("""
             SELECT *
-            FROM gsmdaily
+            FROM gsmdailynew
             WHERE "siteid" LIKE :siteid
             AND "date" BETWEEN :start_date AND :end_date
         """)
@@ -375,7 +375,7 @@ class QueryManager:
         }
 
         query_parts = [
-            "SELECT * FROM gsmdaily",
+            "SELECT * FROM gsmdailynew",
             'WHERE "date" BETWEEN :start_date AND :end_date',
         ]
 
@@ -391,13 +391,25 @@ class QueryManager:
         return _self._fetch_data(text(final_query), params)
 
     @st.cache_data(ttl=600)
-    def get_ltehourly_data(_self, siteids: list[str]) -> pd.DataFrame:
-        """Fetch LTE hourly data for multiple site IDs."""
+    def get_ltehourly_data(
+        _self, siteids: list[str], start_date: str, end_date: str
+    ) -> pd.DataFrame:
+        """Fetch LTE hourly data for multiple site IDs with date range."""
         conditions, params = _self._build_like_conditions("eNodeB Name", siteids)
+
         query = text(f"""
             SELECT * FROM ltehourly
             WHERE ({conditions})
+            AND "Time" BETWEEN :start_datetime AND :end_datetime
         """)
+
+        params.update(
+            {
+                "start_datetime": f"{start_date} 00:00:00",
+                "end_datetime": f"{end_date} 00:00:00",
+            }
+        )
+
         df = _self._fetch_data(query, params)
         return (
             df.assign(
@@ -598,38 +610,38 @@ class ChartGenerator:
 
     def create_gsm_daily_charts(self, df, site):
         parameters = [
-            "CSSR(%)",
-            "TCH Drop Rate",
-            "hosr",
-            "SDCCH Setup Success Rate (SDSR)",
-            "TBF Comp SR",
-            "TBF DL Est SR",
-            "SDCCH Traffic",
-            "TCH Traffic",
-            "GPRS Payload (Mbyte)",
-            "EDGE Payload (Mbyte)",
+            "CSSR_Percent",
+            "TDR_Percent",
+            "HOSR_Percent",
+            "SDSR_Percent",
+            "TBF_Completion_Success_Rate_Percent",
+            "Downlink_TBF_Establish_Success_Rate_Percent",
+            "SDCCH_Traffic_Erl",
+            "TCH_Traffic_Erl",
+            "Payload_GPRS_MB",
+            "Payload_EDGE_MB",
         ]
 
         custom_headers = {
-            "CSSR(%)": "CSSR %",
-            "TCH Drop Rate": "TDR",
-            "hosr": "HOSR",
-            "SDCCH Setup Success Rate (SDSR)": "SDSR",
-            "TBF Comp SR": "TBF Comp SR",
-            "TBF DL Est SR": "TBF DL Est SR",
-            "SDCCH Traffic": "SDCCH Traffic",
-            "TCH Traffic": "TCH Traffice",
-            "GPRS Payload (Mbyte)": "GPRS Payload (Mbyte)",
-            "EDGE Payload (Mbyte)": "EDGE Payload (Mbyte)",
+            "CSSR_Percent": "CSSR %",
+            "TDR_Percent": "TDR",
+            "HOSR_Percent": "HOSR",
+            "SDSR_Percent": "SDSR",
+            "TBF_Completion_Success_Rate_Percent": "TBF Comp SR",
+            "Downlink_TBF_Establish_Success_Rate_Percent": "TBF DL Est SR",
+            "SDCCH_Traffic_Erl": "SDCCH Traffic",
+            "TCH_Traffic_Erl": "TCH Traffice",
+            "Payload_GPRS_MB": "GPRS Payload (Mbyte)",
+            "Payload_EDGE_MB": "EDGE Payload (Mbyte)",
         }
 
         df["date"] = pd.to_datetime(df["date"])
 
-        if "cellname" in df.columns:
-            df["cellsector"] = df["siteid"] + "_" + df["cellname"].str[-3:]
+        if "Cell_Name" in df.columns:
+            df["cellsector"] = df["siteid"] + "_" + df["Cell_Name"].str[-3:]
         else:
             st.warning(
-                "Kolom 'cellname' tidak ditemukan. Menggunakan 'cell_name' sebagai fallback."
+                "Kolom 'Cell_Name' tidak ditemukan. Menggunakan 'cell_name' sebagai fallback."
             )
             df["cellsector"] = df["siteid"]
 
@@ -1471,7 +1483,7 @@ class App:
                             )
 
                             df_hourly = self.query_manager.get_ltehourly_data(
-                                selected_sites
+                                selected_sites, start_date_str, end_date_str
                             )
                             self.dataframe_manager.add_dataframe(
                                 f"hourly_{site}", df_hourly
