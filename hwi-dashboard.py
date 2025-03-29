@@ -841,7 +841,9 @@ class ChartGenerator:
 
                     st.altair_chart(chart, use_container_width=True)
 
-    def create_charts_for_stacked_area(self, df, cell_name, x_param, y_param):
+    def create_charts_for_stacked_area(
+        self, df, cell_name, x_param, y_param, key_prefix=None
+    ):
         df = df.sort_values(by=x_param)
         df[y_param] = df[y_param].astype(float)
         df["sector"] = df[cell_name].apply(self.determine_sector)
@@ -873,9 +875,16 @@ class ChartGenerator:
                 else "No Sectors"
             )
 
+            # Create a unique key using the prefix (if provided) and sector
+            unique_key = (
+                f"{key_prefix}_sector_{sector}"
+                if key_prefix
+                else f"stacked_area_sector_{sector}"
+            )
+
             with columns[idx % cols]:
                 with stylable_container(
-                    key=f"container_with_border_{sector}",
+                    key=f"container_{sector}_{key_prefix if key_prefix else 'default'}",
                     css_styles="""
                             {
                                 background-color: #F5F5F5;
@@ -944,7 +953,7 @@ class ChartGenerator:
                             showlegend=True,
                         )
 
-                        st.plotly_chart(fig, use_container_width=True)
+                        st.plotly_chart(fig, use_container_width=True, key=unique_key)
 
     def create_charts_for_stacked_area_neid(self, df, neid, x_param, y_param, key=None):
         df[y_param] = df[y_param].astype(float)
@@ -1413,7 +1422,6 @@ class App:
                     end_date_str = end_date.strftime("%Y-%m-%d")
 
                     with st.spinner("Fetching data..."):
-                        # Fetch data for selected_sites
                         for site in selected_sites:
                             if selected_band:
                                 df_daily = self.query_manager.get_ltedaily_data(
@@ -1997,6 +2005,7 @@ class App:
                         cell_name="cell_name",
                         x_param="date",
                         y_param="total_traffic_volume_gb",
+                        key_prefix=f"tab1_sow_{site}",
                     )
                     st.markdown(
                         *styling(
@@ -2011,6 +2020,7 @@ class App:
                         cell_name="cell_name",
                         x_param="date",
                         y_param="total_traffic_volume_gb",
+                        key_prefix=f"tab1_all_{site}",
                     )
                     st.markdown(
                         *styling(
